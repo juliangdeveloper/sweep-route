@@ -315,87 +315,79 @@ function simplify(path){
 /* ---- modo CUBRIR: franjas serpenteantes con ancho del barredor ---- */
 function coverPlan(startCell, B){
   const comps=components(); if(!comps.length) return null;
-  // ordenar componentes por cercania encadenada
-  let cur=startCell, order=[];
+  const segs=[];
+  let cur=startCell;
   const pend=comps.slice();
   while(pend.length){
     let bi=0,bd=1e18;
-    pend.forEach((c,i)=>{ let md=1e18; for(let k=0;k<c.cells.length;k+=Math.max(1,(c.cells.length/40)|0)){
-        const cell=c.cells[k], x=cell%GW,y=(cell/GW)|0; const d=(x-cur.x)**2+(y-cur.y)**2; if(d<md)md=d; }
-      if(md<bd){bd=md;bi=i;} });
-    const c=pend.splice(bi,1)[0]; order.push(c);
-    const cell=c.cells[(c.cells.length/2)|0]; cur={x:cell%GW,y:(cell/GW)|0};
-  }
-  const segs=[];
-  let prevEnd=startCell;
-  order.forEach(comp=>{
+    pend.forEach((c,i)=>{ let sx=0,sy=0;
+      c.cells.forEach(cell=>{ sx+=cell%GW; sy+=(cell/GW)|0; });
+      const d=(sx/c.cells.length-cur.x)**2+(sy/c.cells.length-cur.y)**2;
+      if(d<bd){bd=d;bi=i;} });
+    const comp=pend.splice(bi,1)[0];
     const set=new Set(comp.cells);
     const minB={x:GW,y:GH}, maxB={x:0,y:0};
     comp.cells.forEach(c=>{ const x=c%GW,y=(c/GW)|0;
       if(x<minB.x)minB.x=x; if(x>maxB.x)maxB.x=x; if(y<minB.y)minB.y=y; if(y>maxB.y)maxB.y=y; });
-    // elegir orientacion: menos tramos = menos giros
-    function runCount(vertical){
-      let n=0;
+    function runCount(vertical){ let n=0;
       if(vertical){ for(let x=minB.x;x<=maxB.x;x++){ let inr=false;
         for(let y=minB.y;y<=maxB.y;y++){ const on=set.has(idx(x,y)); if(on&&!inr)n++; inr=on; } } }
       else { for(let y=minB.y;y<=maxB.y;y++){ let inr=false;
         for(let x=minB.x;x<=maxB.x;x++){ const on=set.has(idx(x,y)); if(on&&!inr)n++; inr=on; } } }
-      return n;
-    }
-    const hz=runCount(false), vt=runCount(true);
-    const vertical = vt<=hz; // pasadas verticales si genera menos tramos
-    // filas de pasada espaciadas B
-    const lo = vertical?minB.x:minB.y, hi = vertical?maxB.x:maxY(maxB,vertical);
-    function maxY(mb,v){ return v?mb.x:mb.y; }
-    const span = (vertical?maxB.x:maxB.y) - lo;
+      return n; }
+    const vertical = runCount(true)<=runCount(false);
+    const lo = vertical?minB.x:minB.y, hi = vertical?maxB.x:maxB.y;
+    const tLo = vertical?minB.y:minB.x, tHi = vertical?maxB.y:maxB.x;
+    const span = hi-lo;
     const nP = Math.max(1, Math.round(span/B)+1);
-    const offs = [];
-    for(let k=0;k<nP;k++){ let o=lo + (span*Math.min(1,k/Math.max(1,nP-1))); offs.push(Math.round(o)); }
-    // dedup
-    const rows=[...new Set(offs)].sort((a,b)=>a-b);
-    let dir=1, lastPt=null, firstPt=null;
+    const rows=[...new Set(Array.from({length:nP},(_,k)=>Math.round(lo+span*k/Math.max(1,nP-1))))].sort((a,b)=>a-b);
+    // arrancar por el lado mas cercano al punto actual
+    const eCoord = vertical?cur.x:cur.y;
+    if(Math.abs(eCoord-lo) > Math.abs(eCoord-hi)) rows.reverse();
+    const local=[];
+    let firstPt=null, lastPt=null, dir=null;
     rows.forEach(r=>{
-      // tramos de celdas del comp en esa fila/columna
       const runs=[]; let s=-1;
-      for(let t=(vertical?minB.y:minB.x); t<=(vertical?maxB.y:maxB.x); t++){
+      for(let t=tLo;t<=tHi;t++){
         const on = vertical? set.has(idx(r,t)) : set.has(idx(t,r));
         if(on&&s<0) s=t;
-        if((!on||t===(vertical?maxB.y:maxB.x))&&s>=0){
-          const e = (!on)? t-1 : t;
-          if(e>=s) runs.push([s,e]); s=-1;
-        }
+        if((!on||t===tHi)&&s>=0){ const e=(!on)?t-1:t; if(e>=s) runs.push([s,e]); s=-1; }
       }
       if(!runs.length) return;
-      if(dir===1) runs.sort((a,b)=>a[0]-b[0]); else runs.sort((a,b)=>b[0]-a[0]);
+      if(dir===null){ const c0 = vertical?cur.y:cur.x; dir = c0 < (tLo+tHi)/2 ? 1 : -1; }
+      else dir = -dir;
+      runs.sort((a,b)=> dir===1 ? a[0]-b[0] : b[0]-a[0]);
       runs.forEach(rg=>{
         const a = vertical? {x:r,y:rg[0]} : {x:rg[0],y:r};
         const b = vertical? {x:r,y:rg[1]} : {x:rg[1],y:r};
         const A = dir===1?a:b, Bp = dir===1?b:a;
-        if(!firstPt){ firstPt=A; }
+        if(!firstPt) firstPt=A;
         if(lastPt){
-          if(segClear(lastPt,A)) segs.push({a:lastPt,b:A,dash:false});
-          else { const p=bfsPath(lastPt,A); if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:false}); });
-                 else segs.push({a:lastPt,b:A,dash:true}); }
+          if(segClear(lastPt,A)) local.push({a:lastPt,b:A,dash:false});
+          else { const p=bfsPath(lastPt,A);
+            if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) local.push({a:arr[i-1],b:pt,dash:false}); });
+            else local.push({a:lastPt,b:A,dash:true}); }
         }
-        segs.push({a:A,b:Bp,dash:false}); lastPt=Bp;
+        local.push({a:A,b:Bp,dash:false}); lastPt=Bp;
       });
-      dir*=-1;
     });
-    // conectar con el punto anterior (componente previa / inicio)
+    // conector de entrada al componente (transito, punteado)
     if(firstPt){
-      if(segClear(prevEnd,firstPt)) segs.unshift({a:prevEnd,b:firstPt,dash:false});
-      else { const p=bfsPath(prevEnd,firstPt);
-        if(p){ const sp=simplify(p); segs.unshift({a:prevEnd,b:sp[0]||firstPt,dash:true});
-               for(let i=1;i<sp.length;i++) segs.push({a:sp[i-1],b:sp[i],dash:false}); }
-        else segs.unshift({a:prevEnd,b:firstPt,dash:true}); }
+      if(!lastPt) lastPt=firstPt;
+      if(segClear(cur,firstPt)) segs.push({a:cur,b:firstPt,dash:true});
+      else { const p=bfsPath(cur,firstPt);
+        if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:true}); });
+        else segs.push({a:cur,b:firstPt,dash:true}); }
     }
-    if(lastPt) prevEnd=lastPt;
-  });
+    local.forEach(sg=>segs.push(sg));
+    if(lastPt) cur=lastPt;
+  }
+  // regreso al inicio (transito, punteado)
   if(retStart){
-    if(segClear(prevEnd,startCell,0.6)) segs.push({a:prevEnd,b:startCell,dash:false});
-    else { const p=bfsPath(prevEnd,startCell);
-      if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:false}); });
-      else segs.push({a:prevEnd,b:startCell,dash:true}); }
+    if(segClear(cur,startCell,0.6)) segs.push({a:cur,b:startCell,dash:true});
+    else { const p=bfsPath(cur,startCell);
+      if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:true}); });
+      else segs.push({a:cur,b:startCell,dash:true}); }
   }
   return segs;
 }
@@ -411,7 +403,7 @@ function visitPlan(startCell){
       if(x%stride===stride>>1 && y%stride===stride>>1) pois.push({x,y});
     });});
     stride++;
-  } while(pois.length>44 && stride<14);
+  } while(pois.length>20 && stride<14);
   if(!pois.length) pois.push({x:comps[0].cells[0]%GW, y:(comps[0].cells[0]/GW)|0});
   const nodes=[startCell, ...pois];
   const N=nodes.length;
@@ -476,9 +468,10 @@ function compute(){
   let sc=start?nearestPainted(start):null;
   if(!sc){ const c=mask.indexOf(1); sc={x:c%GW,y:(c/GW)|0}; start={...sc}; toast('Inicio ubicado automáticamente 🚩'); }
   const t0=performance.now();
-  const segs = modeVisit ? visitPlan(sc) : coverPlan(sc, B);
+  let segs = modeVisit ? visitPlan(sc) : coverPlan(sc, B);
   const ms=Math.round(performance.now()-t0);
   if(!segs||!segs.length){ toast('No hay área que barrer'); return; }
+  segs = segs.filter(s=>Math.hypot(s.b.x-s.a.x, s.b.y-s.a.y)>0.01);
   // longitud y cobertura
   let lenCells=0;
   segs.forEach(s=>lenCells+=Math.hypot(s.b.x-s.a.x,s.b.y-s.a.y));
@@ -496,7 +489,7 @@ function compute(){
   let painted=0, hit=0;
   for(let i=0;i<GW*GH;i++) if(mask[i]){ painted++; if(cov[i]) hit++; }
   const covPct=painted?Math.round(100*hit/painted):0;
-  route={segs, lenPx, covPct, stops: modeVisit? (segs.length?1:0):0};
+  route={segs, lenPx, covPct, Bpx:B*cs, stops: modeVisit? (segs.length?1:0):0};
   startAnim();
   const lenTxt = calibrated ? (meters>=100?Math.round(meters):meters.toFixed(1))+' m' : Math.round(meters*60/60* (pxPerM/60) )+' pasos';
   const lenShow = calibrated ? (meters>=100?Math.round(meters):meters.toFixed(1))+' m' : Math.round(lenPx)+' px';
@@ -549,9 +542,14 @@ function drawRoute(r, dist){
     ctx.moveTo(s.a.x*cs+cs/2, s.a.y*cs+cs/2);
     ctx.lineTo(ex*cs+cs/2, ey*cs+cs/2);
     if(s.dash){ ctx.setLineDash([5,5]); ctx.strokeStyle='rgba(255,150,40,0.9)'; ctx.lineWidth=3; }
-    else { ctx.setLineDash([]); ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=6; ctx.stroke();
-           ctx.beginPath(); ctx.moveTo(s.a.x*cs+cs/2, s.a.y*cs+cs/2); ctx.lineTo(ex*cs+cs/2, ey*cs+cs/2);
-           ctx.strokeStyle='#ff4040'; ctx.lineWidth=3; }
+    else {
+      if(r.Bpx){ ctx.setLineDash([]); ctx.strokeStyle='rgba(255,64,64,0.16)';
+        ctx.lineWidth=Math.max(4, r.Bpx); ctx.stroke(); 
+        ctx.beginPath(); ctx.moveTo(s.a.x*cs+cs/2, s.a.y*cs+cs/2); ctx.lineTo(ex*cs+cs/2, ey*cs+cs/2); }
+      ctx.setLineDash([]); ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=6; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s.a.x*cs+cs/2, s.a.y*cs+cs/2); ctx.lineTo(ex*cs+cs/2, ey*cs+cs/2);
+      ctx.strokeStyle='#ff4040'; ctx.lineWidth=3;
+    }
     ctx.stroke(); ctx.setLineDash([]);
     acc+=L;
     if(t<1){ ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ex*cs+cs/2, ey*cs+cs/2, 6, 0, 7); ctx.fill(); }
