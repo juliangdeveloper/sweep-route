@@ -11,8 +11,8 @@ Planificador de rutas de barrido. Carga un plano (o dibuja en blanco), pinta las
 3. **🖌️ Pinta las áreas transitables** con pincel, ▭ rectángulo, 🪣 llenar o borra con 🧽 goma. Lo que no pintes = bloqueado (muebles, muros).
 4. **🚩 Marca el inicio** de la ruta con un clic sobre el área pintada.
 5. Define el **ancho del barredor** (en metros) y activa **↩ regresar al inicio** si quieres un circuito cerrado.
-6. **⚡ Calcular**: modo por defecto **cubre** todo (zigzag con el ancho de la escoba); activa **📍 modo visitar** para la ruta más corta que solo toca cada zona.
-7. La ruta se anima sobre el plano y muestra la longitud total. El proyecto se autoguarda en tu navegador.
+6. **⚡ Calcular**: elige el modo — **🧹 Cubrir todo** (zigzag con el ancho de la escoba), **1️⃣ Sin repetir** (un solo trazado que recorre cada punto una sola vez, sin repasar zonas; compatible con regresar al inicio, el cierre va como tránsito) o **📍 Visitar zonas** (ruta corta que solo toca cada zona).
+7. La ruta se anima sobre el plano mostrando la superficie barrida y la longitud total. El proyecto se autoguarda en tu navegador.
 
 ## Algoritmo
 

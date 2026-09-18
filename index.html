@@ -24,7 +24,7 @@ canvas{display:block;width:100%}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px;background:var(--panel);border-radius:12px;padding:10px 12px}
 .row label{font-size:.82em;color:var(--dim);font-weight:600}
 .row input[type=range]{width:110px}
-.row input[type=number]{width:64px;padding:5px 7px;border-radius:8px;border:1px solid #333;background:#0d1b2a;color:#fff;font-size:.9em}
+.row input[type=number], .row select{padding:5px 7px;border-radius:8px;border:1px solid #333;background:#0d1b2a;color:#fff;font-size:.9em}
 .row .val{color:var(--text);font-weight:700;font-size:.85em;min-width:44px}
 .toggle{display:flex;align-items:center;gap:6px;font-size:.82em;color:var(--dim);cursor:pointer;font-weight:600}
 .toggle input{accent-color:var(--accent)}
@@ -50,7 +50,7 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 <body>
 <header>
   <h1>🧹 Sweep<span>Route</span></h1>
-  <div id="verBadge">v1.3.0</div>
+  <div id="verBadge">v1.4.0</div>
   <div id="lenBadge">— <small>sin ruta</small></div>
 </header>
 <main>
@@ -71,8 +71,13 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
     <span class="val" id="brushVal">14</span>
     <label>Ancho barredor (m)</label>
     <input type="number" id="broomW" step="0.05" min="0.1" max="3" value="0.35">
+    <label>Modo</label>
+    <select id="modeSel">
+      <option value="cover">🧹 Cubrir todo</option>
+      <option value="once">1️⃣ Sin repetir (1 pasada)</option>
+      <option value="visit">📍 Visitar zonas</option>
+    </select>
     <label class="toggle"><input type="checkbox" id="retStart"> ↩ Regresar al inicio</label>
-    <label class="toggle"><input type="checkbox" id="modeVisit"> 📍 Modo visitar (en vez de cubrir)</label>
     <span id="scaleInfo">escala no calibrada — se asume 1 m ≈ 60 px</span>
   </div>
 
@@ -143,7 +148,7 @@ function unrle(s, len){ const parts=s.split(','), m=new Uint8Array(len); let i=0
 function saveState(){
   try{
     const d = { gw:GW, gh:GH, mask:rle(mask), pxPerM, calibrated,
-      broom:+$('broomW').value, retStart, modeVisit,
+      broom:+$('broomW').value, retStart, mode:$('modeSel').value,
       start, brush:$('brushSz').value,
       img: bgImg ? bgImg.src.slice(0, 3_500_000) : null };
     localStorage.setItem('sweeproute_v1', JSON.stringify(d));
@@ -161,7 +166,8 @@ function afterLoad(d){
   if(d.gw===GW && d.gh===GH){ mask = unrle(d.mask, GW*GH); }
   pxPerM = d.pxPerM||60; calibrated = !!d.calibrated;
   $('broomW').value = d.broom||0.35; retStart=!!d.retStart; $('retStart').checked=retStart;
-  modeVisit=!!d.modeVisit; $('modeVisit').checked=modeVisit;
+  modeSel.value = d.mode || (d.modeVisit?'visit':'cover');
+  syncMode();
   $('brushSz').value=d.brush||14; brushR=+$('brushSz').value; $('brushVal').textContent=brushR;
   start = d.start||null; updateScaleInfo(); render();
 }
@@ -186,7 +192,9 @@ document.querySelectorAll('[data-tool]').forEach(ch=>{
 });
 $('brushSz').oninput=e=>{ brushR=+e.target.value; $('brushVal').textContent=brushR; scheduleSave(); };
 $('retStart').onchange=e=>{ retStart=e.target.checked; scheduleSave(); };
-$('modeVisit').onchange=e=>{ modeVisit=e.target.checked; scheduleSave(); };
+let mode='cover';
+function syncMode(){ mode=$('modeSel').value; scheduleSave(); }
+$('modeSel').onchange=syncMode;
 $('btnUndo').onclick=doUndo;
 $('btnClear').onclick=()=>{ pushUndo(); mask.fill(0); start=null; route=null; render(); scheduleSave(); };
 $('btnReplay').onclick=()=>{ if(route){ startAnim(); } };
@@ -394,6 +402,78 @@ function coverPlan(startCell, B){
   return segs;
 }
 
+/* ---- modo SIN REPETIR: un solo trazo que no repasa celdas ---- */
+function oncePlan(startCell, B){
+  const comps=components(); if(!comps.length) return null;
+  const segs=[];
+  let cur=startCell;
+  const pend=comps.slice();
+  while(pend.length){
+    let bi=0,bd=1e18;
+    pend.forEach((c,i)=>{ let sx=0,sy=0;
+      c.cells.forEach(cell=>{ sx+=cell%GW; sy+=(cell/GW)|0; });
+      const d=(sx/c.cells.length-cur.x)**2+(sy/c.cells.length-cur.y)**2;
+      if(d<bd){bd=d;bi=i;} });
+    const comp=pend.splice(bi,1)[0];
+    const set=new Set(comp.cells);
+    // resolucion: celdas gruesas (paso ~2 celdas) para un grafo manejable
+    const step=Math.max(1, Math.min(3, Math.round(B/2)));    const grid=new Map(); // clave "x,y" -> {x,y,nb:[]}
+    const key=(x,y)=>x+','+y;
+    comp.cells.forEach(c=>{ const x=c%GW,y=(c/GW)|0;
+      if(((x%step)+step)%step===0 && ((y%step)+step)%step===0) grid.set(key(x,y),{x,y,nb:[]}); });
+    if(!grid.size){ const c0=comp.cells[0]; grid.set(key(c0%GW,(c0/GW)|0),{x:c0%GW,y:(c0/GW)|0,nb:[]}); }
+    const nodes=[...grid.values()];
+    nodes.forEach(n=>{
+      [[step,0],[-step,0],[0,step],[0,-step]].forEach(d=>{
+        const m=grid.get(key(n.x+d[0],n.y+d[1])); if(m) n.nb.push(m); });
+    });
+    // grafo podado puede quedar desconecto: conectar por BFS de nodos
+    // entrada al componente: nodo mas cercano a cur
+    let entry=nodes[0], ebd=1e18;
+    nodes.forEach(n=>{ const d=(n.x-cur.x)**2+(n.y-cur.y)**2; if(d<ebd){ebd=d;entry=n;} });
+    // conector de entrada al componente (transito punteado)
+    if(segClear(cur,{x:entry.x,y:entry.y},0.6)) segs.push({a:cur,b:{x:entry.x,y:entry.y},dash:true});
+    else { const p=bfsPath(cur,{x:entry.x,y:entry.y});
+      if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:true}); });
+      else segs.push({a:cur,b:{x:entry.x,y:entry.y},dash:true}); }
+    // paseo que visita cada NODO una sola vez; saltos punteados si se atasca
+    const visited=new Set();
+    let n=entry;
+    visited.add(key(n.x,n.y));
+    while(true){
+      let nxt=null, bd2=1e18;
+      for(const m of n.nb){
+        if(visited.has(key(m.x,m.y))) continue;
+        const d=(m.x-n.x)**2+(m.y-n.y)**2;
+        if(d<bd2){ bd2=d; nxt=m; }
+      }
+      if(nxt){
+        visited.add(key(nxt.x,nxt.y));
+        segs.push({a:{x:n.x,y:n.y}, b:{x:nxt.x,y:nxt.y}, dash:false});
+        n=nxt;
+        continue;
+      }
+      // sin vecinos nuevos: saltar al nodo no visitado mas cercano
+      let target=null, tbd=1e18;
+      for(const m of nodes){
+        if(visited.has(key(m.x,m.y))) continue;
+        const d=(m.x-n.x)**2+(m.y-n.y)**2; if(d<tbd){ tbd=d; target=m; }
+      }
+      if(!target) break;
+      segs.push({a:{x:n.x,y:n.y}, b:{x:target.x,y:target.y}, dash:true});
+      n=target; visited.add(key(n.x,n.y));
+    }
+    cur={x:n.x, y:n.y};
+  }
+  if(retStart){
+    if(segClear(cur,startCell,0.6)) segs.push({a:cur,b:startCell,dash:true});
+    else { const p=bfsPath(cur,startCell);
+      if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:true}); });
+      else segs.push({a:cur,b:startCell,dash:true}); }
+  }
+  return segs;
+}
+
 /* ---- modo VISITAR: POIs + vecino cercano + 2-opt ---- */
 function visitPlan(startCell){
   const comps=components(); if(!comps.length) return null;
@@ -470,7 +550,7 @@ function compute(){
   let sc=start?nearestPainted(start):null;
   if(!sc){ const c=mask.indexOf(1); sc={x:c%GW,y:(c/GW)|0}; start={...sc}; toast('Inicio ubicado automáticamente 🚩'); }
   const t0=performance.now();
-  let segs = modeVisit ? visitPlan(sc) : coverPlan(sc, B);
+  let segs = mode==='visit' ? visitPlan(sc) : mode==='once' ? oncePlan(sc,B) : coverPlan(sc, B);
   const ms=Math.round(performance.now()-t0);
   if(!segs||!segs.length){ toast('No hay área que barrer'); return; }
   segs = segs.filter(s=>Math.hypot(s.b.x-s.a.x, s.b.y-s.a.y)>0.01);
@@ -491,12 +571,11 @@ function compute(){
   let painted=0, hit=0;
   for(let i=0;i<GW*GH;i++) if(mask[i]){ painted++; if(cov[i]) hit++; }
   const covPct=painted?Math.round(100*hit/painted):0;
-  route={segs, lenPx, covPct, Bpx:B*cs, stops: modeVisit? (segs.length?1:0):0};
+  route={segs, lenPx, covPct, Bpx:(mode==='cover')?B*cs:0, stops: mode==='visit'? (segs.length?1:0):0};
   startAnim();
-  const lenTxt = calibrated ? (meters>=100?Math.round(meters):meters.toFixed(1))+' m' : Math.round(meters*60/60* (pxPerM/60) )+' pasos';
   const lenShow = calibrated ? (meters>=100?Math.round(meters):meters.toFixed(1))+' m' : Math.round(lenPx)+' px';
   $('lenBadge').innerHTML = lenShow + (calibrated?'':' <small>sin calibrar</small>') +
-    (modeVisit? '' : ' <small>· cubre '+covPct+'%</small>');
+    (mode==='cover' ? ' <small>· cubre '+covPct+'%</small>' : ' <small>· '+(mode==='once'?'1 pasada':'visita')+'</small>');
   console.log('ruta calculada en', ms, 'ms ·', segs.length, 'segmentos ·', lenShow, '· cobertura', covPct+'%');
 }
 
