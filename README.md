@@ -18,6 +18,7 @@ Planificador de rutas de barrido. Carga un plano (o dibuja en blanco), pinta las
 
 - Modelo raster: el área pintada es una grilla de ~4 px/celda.
 - **Cobertura**: descomposición en franjas serpenteantes espaciadas al ancho del barredor, por componente conexo; elige la orientación que minimiza giros y ordena componentes por vecino más cercano, conectando con BFS por el interior del área.
+- **Sin repetir**: por componente (el más cercano primero), submuestrea el área en una grilla gruesa (paso de 1–3 celdas según el ancho del barredor) y la recorre con un paseo voraz que visita cada nodo una sola vez; si se atasca, salta (punteado) al nodo no visitado más cercano. Las entradas a cada componente y el regreso al inicio van como tránsito punteado (recto si no cruza muros, si no por BFS).
 - **Visitar**: puntos de interés dispersos + BFS entre ellos + TSP aproximado (vecino cercano + 2-opt).
 - Las líneas entre zonas que cruzan muros se marcan punteadas (salto).
 
