@@ -50,7 +50,7 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 <body>
 <header>
   <h1>🧹 Sweep<span>Route</span></h1>
-  <div id="verBadge">v1.4.0</div>
+  <div id="verBadge">v1.5.0</div>
   <div id="lenBadge">— <small>sin ruta</small></div>
 </header>
 <main>
@@ -284,32 +284,132 @@ function components(){
   }
   return comps.filter(c=>c.cells.length>=4);
 }
-function bfsPath(from, to){
-  // camino por celdas pintadas 4-conexas
-  if(!inB(from.x,from.y)||!inB(to.x,to.y)) return null;
-  if(!mask[idx(to.x,to.y)]){ const t2=nearestPainted(to); if(!t2) return null; to=t2; }
-  const prev=new Int32Array(GW*GH).fill(-2); const q=[idx(from.x,from.y)];
-  if(!mask[q[0]]) return null; prev[q[0]]=-1;
-  const target=idx(to.x,to.y);
-  for(let h=0; h<q.length; h++){
-    const c=q[h]; if(c===target) break;
-    const x=c%GW, y=(c/GW)|0;
-    const ns=[x+1,y, x-1,y, x,y+1, x,y-1];
-    for(let k=0;k<8;k+=2){ const nx=ns[k],ny=ns[k+1];
-      if(!inB(nx,ny)) continue; const j=idx(nx,ny);
-      if(mask[j]&&prev[j]===-2){ prev[j]=c; q.push(j); } }
-  }
-  if(prev[target]===-2) return null;
-  const path=[]; let c=target;
-  while(c!==-1){ path.push({x:c%GW,y:(c/GW)|0}); c=prev[c]; }
+/* 8 direcciones: ortogonal costo 1, diagonal √2. Sin cortar esquinas. */
+const SQRT2 = Math.SQRT2;
+const DX = new Int8Array([1,-1,0,0, 1,1,-1,-1]);
+const DY = new Int8Array([0,0,1,-1, 1,-1,1,-1]);
+const STEP_COST = new Float64Array([1,1,1,1, SQRT2,SQRT2,SQRT2,SQRT2]);
+function octile(x, y, tx, ty){
+  const dx = Math.abs(x-tx), dy = Math.abs(y-ty);
+  const mn = dx<dy ? dx : dy;
+  return dx + dy + (SQRT2-2)*mn;
+}
+function reconstruct(prev, target){
+  if(!prev || prev[target]===-2) return null;
+  const path=[]; let c=target, guard=prev.length+1;
+  while(c!==-1 && guard-- > 0){ path.push({x:c%GW, y:(c/GW)|0}); c=prev[c]; }
   return path.reverse();
 }
-function segClear(a,b,frac=0.8){
-  const n=Math.max(2, Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)));
-  let ok=0;
-  for(let i=0;i<=n;i++){ const x=Math.round(a.x+(b.x-a.x)*i/n), y=Math.round(a.y+(b.y-a.y)*i/n);
-    if(inB(x,y)&&mask[idx(x,y)]) ok++; }
-  return ok/(n+1)>=frac;
+/* A* si hay `goal` (un destino); Dijkstra si hay `goals` (para al alcanzarlos todos).
+   Devuelve distancias y predecesores con la misma métrica. */
+function routeSearch(origin, opt){
+  if(!inB(origin.x, origin.y) || !mask[idx(origin.x, origin.y)]) return null;
+  const N = GW*GH;
+  const dist = new Float64Array(N); dist.fill(Infinity);
+  const prev = new Int32Array(N); prev.fill(-2);
+  const closed = new Uint8Array(N);
+  const s = idx(origin.x, origin.y);
+  dist[s]=0; prev[s]=-1;
+  const goal = opt && opt.goal;
+  const goalI = goal ? idx(goal.x, goal.y) : -1;
+  const tx = goal ? goal.x : 0, ty = goal ? goal.y : 0;
+  let want=null, pending=0;
+  if(!goal && opt && opt.goals){
+    want = new Uint8Array(N);
+    const gs = opt.goals;
+    for(let i=0;i<gs.length;i++){
+      const ti = idx(gs[i].x, gs[i].y);
+      if(!want[ti]){ want[ti]=1; pending++; }
+    }
+  }
+  let hv = new Int32Array(Math.max(1024, N));
+  let hp = new Float64Array(hv.length);
+  let hs = 0;
+  function push(v, pr){
+    if(hs >= hv.length){
+      const nh = new Int32Array(hv.length*2), np = new Float64Array(hp.length*2);
+      nh.set(hv); np.set(hp); hv=nh; hp=np;
+    }
+    let i=hs++;
+    hv[i]=v; hp[i]=pr;
+    while(i>0){
+      const p=(i-1)>>1;
+      if(hp[p] <= hp[i]) break;
+      const tv=hv[i]; hv[i]=hv[p]; hv[p]=tv;
+      const tp=hp[i]; hp[i]=hp[p]; hp[p]=tp;
+      i=p;
+    }
+  }
+  function pop(){
+    const v=hv[0];
+    hs--;
+    if(hs>0){
+      hv[0]=hv[hs]; hp[0]=hp[hs];
+      let i=0;
+      while(true){
+        const l=i*2+1, r=l+1; let m=i;
+        if(l<hs && hp[l]<hp[m]) m=l;
+        if(r<hs && hp[r]<hp[m]) m=r;
+        if(m===i) break;
+        const tv=hv[i]; hv[i]=hv[m]; hv[m]=tv;
+        const tp=hp[i]; hp[i]=hp[m]; hp[m]=tp;
+        i=m;
+      }
+    }
+    return v;
+  }
+  push(s, goal ? octile(origin.x, origin.y, tx, ty) : 0);
+  while(hs){
+    const c=pop();
+    if(closed[c]) continue;
+    closed[c]=1;
+    if(c===goalI) break;
+    if(want && want[c] && --pending===0) break;
+    const g0=dist[c];
+    const x=c%GW, y=(c/GW)|0;
+    for(let k=0;k<8;k++){
+      const nx=x+DX[k], ny=y+DY[k];
+      if(nx<0 || ny<0 || nx>=GW || ny>=GH) continue;
+      const j=ny*GW+nx;
+      if(!mask[j] || closed[j]) continue;
+      if(k>=4 && (!mask[y*GW+nx] || !mask[ny*GW+x])) continue;
+      const nd=g0+STEP_COST[k];
+      if(nd<dist[j]){
+        dist[j]=nd; prev[j]=c;
+        push(j, goal ? nd+octile(nx, ny, tx, ty) : nd);
+      }
+    }
+  }
+  return {dist, prev};
+}
+function bfsPath(from, to){
+  if(!inB(from.x,from.y)||!inB(to.x,to.y)) return null;
+  if(!mask[idx(from.x,from.y)]) return null;
+  if(!mask[idx(to.x,to.y)]){ const t2=nearestPainted(to); if(!t2) return null; to=t2; }
+  if(from.x===to.x && from.y===to.y) return [{x:from.x,y:from.y}];
+  const res=routeSearch(from, {goal:to});
+  return res ? reconstruct(res.prev, idx(to.x, to.y)) : null;
+}
+/* Supercover entre centros de celda: toda celda que el segmento toca, incluidas las esquinas. */
+function segClear(a, b){
+  if(!inB(a.x,a.y)||!inB(b.x,b.y)) return false;
+  const x0=a.x, y0=a.y, x1=b.x, y1=b.y;
+  const dx=x1-x0, dy=y1-y0;
+  const nx=Math.abs(dx), ny=Math.abs(dy);
+  const sx=dx>0?1:dx<0?-1:0, sy=dy>0?1:dy<0?-1:0;
+  const walk=(x,y)=> x>=0 && y>=0 && x<GW && y<GH && mask[y*GW+x];
+  if(!walk(x0,y0)) return false;
+  let x=x0, y=y0, ix=0, iy=0;
+  while(ix<nx || iy<ny){
+    const cmp=(1+2*ix)*ny - (1+2*iy)*nx;
+    if(cmp===0){
+      if(!walk(x+sx, y) || !walk(x, y+sy)) return false;
+      x+=sx; y+=sy; ix++; iy++;
+    } else if(cmp<0){ x+=sx; ix++; }
+    else { y+=sy; iy++; }
+    if(!walk(x,y)) return false;
+  }
+  return true;
 }
 function simplify(path){
   if(!path||path.length<3) return path||[];
@@ -317,9 +417,19 @@ function simplify(path){
   for(let i=1;i<path.length-1;i++){
     const p0=out[out.length-1], p1=path[i], p2=path[i+1];
     const cross=(p1.x-p0.x)*(p2.y-p0.y)-(p1.y-p0.y)*(p2.x-p0.x);
-    if(Math.abs(cross)>0.01) out.push(p1);
+    if(Math.abs(cross)>0.01 || !segClear(p0, p2)) out.push(p1);
   }
   out.push(path[path.length-1]); return out;
+}
+/* Atajo recto solo si no toca celdas bloqueadas; si no, el camino interior. Salto punteado si no hay camino. */
+function linkSegs(out, a, b, dash){
+  if(a.x===b.x && a.y===b.y) return;
+  if(segClear(a, b)){ out.push({a, b, dash}); return; }
+  const p=bfsPath(a, b);
+  if(p && p.length>1){
+    const s=simplify(p);
+    for(let i=1;i<s.length;i++) out.push({a:s[i-1], b:s[i], dash});
+  } else out.push({a, b, dash:true});
 }
 
 /* ---- modo CUBRIR: franjas serpenteantes con ancho del barredor ---- */
@@ -372,32 +482,21 @@ function coverPlan(startCell, B){
         const b = vertical? {x:r,y:rg[1]} : {x:rg[1],y:r};
         const A = dir===1?a:b, Bp = dir===1?b:a;
         if(!firstPt) firstPt=A;
-        if(lastPt){
-          if(segClear(lastPt,A)) local.push({a:lastPt,b:A,dash:false});
-          else { const p=bfsPath(lastPt,A);
-            if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) local.push({a:arr[i-1],b:pt,dash:false}); });
-            else local.push({a:lastPt,b:A,dash:true}); }
-        }
+        if(lastPt) linkSegs(local, lastPt, A, false);
         local.push({a:A,b:Bp,dash:false}); lastPt=Bp;
       });
     });
     // conector de entrada al componente (transito, punteado)
     if(firstPt){
       if(!lastPt) lastPt=firstPt;
-      if(segClear(cur,firstPt)) segs.push({a:cur,b:firstPt,dash:true});
-      else { const p=bfsPath(cur,firstPt);
-        if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:true}); });
-        else segs.push({a:cur,b:firstPt,dash:true}); }
+      linkSegs(segs, cur, firstPt, true);
     }
     local.forEach(sg=>segs.push(sg));
     if(lastPt) cur=lastPt;
   }
   // regreso al inicio (transito, punteado)
   if(retStart){
-    if(segClear(cur,startCell,0.6)) segs.push({a:cur,b:startCell,dash:true});
-    else { const p=bfsPath(cur,startCell);
-      if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:true}); });
-      else segs.push({a:cur,b:startCell,dash:true}); }
+    linkSegs(segs, cur, startCell, true);
   }
   return segs;
 }
@@ -427,15 +526,12 @@ function oncePlan(startCell, B){
       [[step,0],[-step,0],[0,step],[0,-step]].forEach(d=>{
         const m=grid.get(key(n.x+d[0],n.y+d[1])); if(m) n.nb.push(m); });
     });
-    // grafo podado puede quedar desconecto: conectar por BFS de nodos
+    // el submuestreo puede dejar el grafo sin aristas; el salto sigue el interior si hay camino
     // entrada al componente: nodo mas cercano a cur
     let entry=nodes[0], ebd=1e18;
     nodes.forEach(n=>{ const d=(n.x-cur.x)**2+(n.y-cur.y)**2; if(d<ebd){ebd=d;entry=n;} });
     // conector de entrada al componente (transito punteado)
-    if(segClear(cur,{x:entry.x,y:entry.y},0.6)) segs.push({a:cur,b:{x:entry.x,y:entry.y},dash:true});
-    else { const p=bfsPath(cur,{x:entry.x,y:entry.y});
-      if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:true}); });
-      else segs.push({a:cur,b:{x:entry.x,y:entry.y},dash:true}); }
+    linkSegs(segs, cur, {x:entry.x,y:entry.y}, true);
     // paseo que visita cada NODO una sola vez; saltos punteados si se atasca
     const visited=new Set();
     let n=entry;
@@ -449,7 +545,7 @@ function oncePlan(startCell, B){
       }
       if(nxt){
         visited.add(key(nxt.x,nxt.y));
-        segs.push({a:{x:n.x,y:n.y}, b:{x:nxt.x,y:nxt.y}, dash:false});
+        linkSegs(segs, {x:n.x,y:n.y}, {x:nxt.x,y:nxt.y}, false);
         n=nxt;
         continue;
       }
@@ -460,16 +556,13 @@ function oncePlan(startCell, B){
         const d=(m.x-n.x)**2+(m.y-n.y)**2; if(d<tbd){ tbd=d; target=m; }
       }
       if(!target) break;
-      segs.push({a:{x:n.x,y:n.y}, b:{x:target.x,y:target.y}, dash:true});
+      linkSegs(segs, {x:n.x,y:n.y}, {x:target.x,y:target.y}, true);
       n=target; visited.add(key(n.x,n.y));
     }
     cur={x:n.x, y:n.y};
   }
   if(retStart){
-    if(segClear(cur,startCell,0.6)) segs.push({a:cur,b:startCell,dash:true});
-    else { const p=bfsPath(cur,startCell);
-      if(p) simplify(p).forEach((pt,i,arr)=>{ if(i) segs.push({a:arr[i-1],b:pt,dash:true}); });
-      else segs.push({a:cur,b:startCell,dash:true}); }
+    linkSegs(segs, cur, startCell, true);
   }
   return segs;
 }
@@ -487,41 +580,52 @@ function visitPlan(startCell){
     stride++;
   } while(pois.length>20 && stride<14);
   if(!pois.length) pois.push({x:comps[0].cells[0]%GW, y:(comps[0].cells[0]/GW)|0});
-  const nodes=[startCell, ...pois];
+  const nodes=[startCell];
+  const seen=new Set([idx(startCell.x, startCell.y)]);
+  for(const p of pois){ const k=idx(p.x,p.y); if(seen.has(k)) continue; seen.add(k); nodes.push(p); }
   const N=nodes.length;
-  // matriz de distancias por BFS
-  const D=Array.from({length:N},()=>new Array(N).fill(Infinity));
-  const P=Array.from({length:N},()=>new Array(N).fill(null));
-  for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){
-    const p=bfsPath(nodes[i],nodes[j]);
-    if(p){ D[i][j]=D[j][i]=p.length; P[i][j]=P[j][i]=simplify(p); }
-    else { D[i][j]=D[j][i]=1e6; P[i][j]=P[j][i]=[{a:nodes[i],b:nodes[j],dash:true}]; }
-  }
-  // vecino mas cercano
-  const used=new Array(N).fill(false); used[0]=true; const tour=[0];
-  for(let k=1;k<N;k++){ let bj=-1,bd=1e18; const c=tour[tour.length-1];
-    for(let j=1;j<N;j++) if(!used[j]&&D[c][j]<bd){bd=D[c][j];bj=j;}
-    used[bj]=true; tour.push(bj); }
-  // 2-opt
-  let improved=true, guard=0;
-  while(improved && guard++<40){
-    improved=false;
-    for(let i=1;i<N-1;i++) for(let k=i+1;k<N;k++){
-      const a=tour[i-1], b=tour[i], c=tour[k], d=(k+1<N)?tour[k+1]:-1;
-      const before=D[a][b]+(d>=0?D[c][d]:0);
-      const after=D[a][c]+(d>=0?D[b][d]:0);
-      if(after<before-0.001){ const rev=tour.slice(i,k+1).reverse(); tour.splice(i,rev.length,...rev); improved=true; }
+  // una búsqueda de fuente única por punto (Dijkstra 8-dir); el camino se reconstruye solo en el tour
+  const D=Array.from({length:N},()=>{ const a=new Float64Array(N); a.fill(Infinity); return a; });
+  const floods=new Array(N);
+  for(let i=0;i<N;i++){
+    D[i][i]=0;
+    floods[i]=routeSearch(nodes[i], {goals:nodes});
+    const f=floods[i];
+    for(let j=0;j<N;j++){
+      if(i===j) continue;
+      D[i][j]= f ? f.dist[idx(nodes[j].x, nodes[j].y)] : Infinity;
     }
   }
-  const segs=[]; let total=0;
+  // vecino mas cercano
+  const used=new Uint8Array(N); used[0]=1; const tour=[0];
+  for(let k=1;k<N;k++){ let bj=-1,bd=Infinity; const c=tour[tour.length-1];
+    for(let j=1;j<N;j++) if(!used[j]&&D[c][j]<bd){bd=D[c][j];bj=j;}
+    // Sin distancia finita (otra componente): igual se visita, con salto punteado.
+    if(bj<0){ for(let j=1;j<N;j++) if(!used[j]){ bj=j; break; } }
+    if(bj<0) break;
+    used[bj]=1; tour.push(bj); }
+  // 2-opt
+  let improved=true, guard=0;
+  const Tn=tour.length;
+  while(improved && guard++<40){
+    improved=false;
+    for(let i=1;i<Tn-1;i++) for(let k=i+1;k<Tn;k++){
+      const a=tour[i-1], b=tour[i], c=tour[k], d=(k+1<Tn)?tour[k+1]:-1;
+      const before=D[a][b]+(d>=0?D[c][d]:0);
+      const after=D[a][c]+(d>=0?D[b][d]:0);
+      if(after+1e-6<before){ const rev=tour.slice(i,k+1).reverse(); tour.splice(i,rev.length,...rev); improved=true; }
+    }
+  }
+  const P=Array.from({length:N},()=>new Array(N));
   for(let k=0;k<tour.length-1;k++){
     const i=tour[k], j=tour[k+1];
-    P[i][j].forEach((seg,si,arr)=>{
-      if(seg.a!==undefined&&seg.b!==undefined){ segs.push({a:seg.a,b:seg.b,dash:!!seg.dash}); total++; }
-      else if(si>0) segs.push({a:arr[si-1],b:seg,dash:false});
-    });
+    const A=nodes[i], B=nodes[j];
+    if(segClear(A, B)){ P[i][j]=[A, B]; continue; }
+    const prev=floods[i] && floods[i].prev;
+    const path=prev ? reconstruct(prev, idx(B.x, B.y)) : null;
+    if(path && path.length) P[i][j]=simplify(path);
+    else P[i][j]=[{a:A, b:B, dash:true}];
   }
-  // P guarda polylines (arrays de puntos) o segmentos de salto; normalizar:
   return normalizeVisit(tour, P, retStart?startCell:null);
 }
 function normalizeVisit(tour, P, backTo){
@@ -535,8 +639,7 @@ function normalizeVisit(tour, P, backTo){
     else if(Array.isArray(pv)) pv.forEach(s=>segs.push({a:s.a,b:s.b,dash:true}));
   }
   if(backTo){ const last=segs.length?segs[segs.length-1].b:backTo;
-    const p=bfsPath(last,backTo);
-    if(p) addPoly(simplify(p),false); else segs.push({a:last,b:backTo,dash:true}); }
+    linkSegs(segs, last, backTo, false); }
   return segs;
 }
 
@@ -653,10 +756,13 @@ window.SR={
   eraseAll:()=>{ mask.fill(0); render(); },
   calibrate:(px,m)=>{ pxPerM=px/m; calibrated=true; updateScaleInfo(); },
   setStart:(x,y)=>{ start={x,y}; render(); },
-  compute, get state(){ return { GW, GH, pxPerM, calibrated, painted:mask.reduce((a,b)=>a+b,0),
-    route: route? {segs:route.segs.length, covPct:route.covPct} : null,
+  compute, bfsPath:(a,b)=>bfsPath(a,b), segClear:(a,b)=>segClear(a,b),
+  routeSearch:(o,opt)=>routeSearch(o,opt),
+  get mask(){ return mask; },
+  get state(){ return { GW, GH, pxPerM, calibrated, painted:mask.reduce((a,b)=>a+b,0),
+    route: route? {segs:route.segs.length, covPct:route.covPct, lenPx:route.lenPx} : null,
     lenBadge: $('lenBadge').textContent, LH, bg: !!bgImg }; },
-  mask, route:()=>route
+  route:()=>route
 };
 
 resizeCanvas(); rebuildGrid(); updateScaleInfo();
