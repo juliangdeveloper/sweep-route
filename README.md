@@ -17,10 +17,11 @@ Planificador de rutas de barrido. Carga un plano (o dibuja en blanco), pinta las
 ## Algoritmo
 
 - Modelo raster: el área pintada es una grilla de ~4 px/celda.
-- **Cobertura**: descomposición en franjas serpenteantes espaciadas al ancho del barredor, por componente conexo; elige la orientación que minimiza giros y ordena componentes por vecino más cercano, conectando con BFS por el interior del área.
-- **Sin repetir**: por componente (el más cercano primero), submuestrea el área en una grilla gruesa (paso de 1–3 celdas según el ancho del barredor) y la recorre con un paseo voraz que visita cada nodo una sola vez; si se atasca, salta (punteado) al nodo no visitado más cercano. Las entradas a cada componente y el regreso al inicio van como tránsito punteado (recto si no cruza muros, si no por BFS).
-- **Visitar**: puntos de interés dispersos + BFS entre ellos + TSP aproximado (vecino cercano + 2-opt).
-- Las líneas entre zonas que cruzan muros se marcan punteadas (salto).
+- **Caminos**: 8 direcciones (ortogonal costo 1, diagonal √2). Un paso diagonal no corta esquinas: las dos celdas ortogonales vecinas tienen que ser transitables. El tránsito entre dos puntos usa A*; las distancias entre muchas zonas salen de un Dijkstra de fuente única por punto. Un atajo recto solo se acepta si el segmento no toca ninguna celda bloqueada (supercover entre centros de celda).
+- **Cobertura**: descomposición en franjas serpenteantes espaciadas al ancho del barredor, por componente conexo; elige la orientación que minimiza giros y ordena componentes por vecino más cercano. Une franjas y componentes por el interior (recto si el tramo está libre; si no, por el camino de 8 direcciones).
+- **Sin repetir**: por componente (el más cercano primero), submuestrea el área en una grilla gruesa (paso de 1–3 celdas según el ancho del barredor) y la recorre con un paseo voraz que visita cada nodo una sola vez; si se atasca, el salto punteado sigue el interior cuando hay camino. Las entradas a cada componente y el regreso al inicio van como tránsito punteado.
+- **Visitar**: puntos de interés dispersos + distancias por Dijkstra de fuente única (una búsqueda por punto, no una por par) + TSP aproximado (vecino cercano + 2-opt).
+- Solo las zonas sin camino interior se unen con un salto punteado, que sí puede cruzar lo no pintado. Ningún tramo con camino disponible atraviesa celdas bloqueadas.
 
 100% cliente: un solo HTML, sin dependencias, sin servidor.
 
