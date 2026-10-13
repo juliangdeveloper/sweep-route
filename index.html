@@ -50,7 +50,7 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 <body>
 <header>
   <h1>🧹 Sweep<span>Route</span></h1>
-  <div id="verBadge">v1.5.0</div>
+  <div id="verBadge">v1.5.1</div>
   <div id="lenBadge">— <small>sin ruta</small></div>
 </header>
 <main>
@@ -112,7 +112,7 @@ let mask = new Uint8Array(GW*GH);  // 1 = transitable
 let bgImg = null, bgAr = 4/3;
 let pxPerM = 60, calibrated = false;
 let tool = 'brush', brushR = 14;
-let start = null, retStart = false, modeVisit = false;
+let start = null, retStart = false;
 let route = null;                  // {segs:[{a,b,dash}], pts, lenPx, covPct, stops}
 let anim = null;                   // estado de animacion
 let undoStack = [];
