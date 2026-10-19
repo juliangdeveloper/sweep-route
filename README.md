@@ -26,3 +26,5 @@ Un solo `index.html` con HTML, Canvas y JavaScript vanilla. Sin dependencias ni 
 ---
 
 Más proyectos: https://juliangdeveloper.github.io/
+
+Hecho con ❤️ y 🧹
