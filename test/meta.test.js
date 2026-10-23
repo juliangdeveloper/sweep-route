@@ -19,7 +19,7 @@ const {
 
 const KEY = 'meta.v1.sweep-route';
 const SAVE = 'sweeproute_v1';
-const VERSION = '1.6.2';
+const VERSION = '1.6.3';
 
 function memoryStorage() {
   const m = new Map();
@@ -125,7 +125,7 @@ test('old save without the meta key backfills one correct record', () => {
   assert.equal(rec.slug, 'sweep-route');
   assert.equal(rec.version, VERSION);
   assert.equal(rec.updatedAt, fixedNow);
-  assert.deepEqual(Object.keys(rec).sort(), ['hitos', 'logros', 'slug', 'stats', 'updatedAt', 'v', 'version']);
+  assert.deepEqual(Object.keys(rec).sort(), ['hitos', 'logros', 'proyecto', 'slug', 'stats', 'updatedAt', 'v', 'version']);
   assert.deepEqual(Object.keys(rec.stats), STATS.map(s => s.key));
   assert.deepEqual(rec.stats, {
     painted_cells: 453,
@@ -450,8 +450,8 @@ test('compute does not rewrite the project save', () => {
   const saveBody = html.slice(html.indexOf('function saveState()'), html.indexOf('function loadState()'));
   assert.equal(saveBody.includes('prog'), false);
   assert.equal(saveBody.includes('mergeSave'), false);
-  assert.match(html, /const APP_VERSION = '1\.6\.2'/);
-  assert.match(html, /id="verBadge">v1\.6\.2/);
+  assert.match(html, /const APP_VERSION = '1\.6\.3'/);
+  assert.match(html, /id="verBadge">v1\.6\.3/);
 });
 
 test('route counters unlock later achievements', () => {
