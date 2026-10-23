@@ -19,7 +19,7 @@ const {
 
 const KEY = 'meta.v1.sweep-route';
 const SAVE = 'sweeproute_v1';
-const VERSION = '1.6.1';
+const VERSION = '1.6.2';
 
 function memoryStorage() {
   const m = new Map();
@@ -374,7 +374,6 @@ test('old save is unchanged after load and routes, with at most one meta write p
   }));
   schedule();
   schedule();
-  flushMeta();
   t.mock.timers.tick(400);
   assert.deepEqual(writes, [KEY]);
   assert.equal(localStorage.getItem(SAVE), raw);
@@ -392,34 +391,56 @@ test('old save is unchanged after load and routes, with at most one meta write p
   assert.equal(localStorage.getItem(SAVE), raw);
 });
 
-test('pagehide flushes a pending change only outside the one-second window', (t) => {
+test('pagehide and hidden visibility flush a pending change immediately', (t) => {
   global.Date = realDate;
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const writes = countWrites();
-  const listeners = {};
+  const messages = [];
+  const listeners = { window: {}, document: {} };
+  function listen(bag, type, fn) { (bag[type] || (bag[type] = [])).push(fn); }
   global.window = {
-    addEventListener(type, fn) { (listeners[type] || (listeners[type] = [])).push(fn); },
-    parent: null
+    addEventListener(type, fn) { listen(listeners.window, type, fn); },
+    parent: { postMessage(data, origin) { messages.push({ data: data, origin: origin }); } }
   };
-  global.window.parent = global.window;
+  global.document = {
+    visibilityState: 'visible',
+    addEventListener(type, fn) { listen(listeners.document, type, fn); }
+  };
+  global.location = { origin: 'https://example.test', search: '' };
   localStorage.setItem(SAVE, JSON.stringify({ gw: 4, gh: 4, mask: '16,1', pxPerM: 60, broom: 0.35, brush: 14 }));
   writes.length = 0;
   backfillMeta(VERSION);
   assert.equal(writes.filter(k => k === KEY).length, 1);
+  messages.length = 0;
   const schedule = createMetaPump(VERSION, () => ({
     gw: 4, gh: 4, mask: '16,1', counters: { routesTotal: 1, routesCover: 1 }
   }));
-  listeners.pagehide[0]();
+  listeners.window.pagehide[0]();
+  global.document.visibilityState = 'hidden';
+  listeners.document.visibilitychange[0]();
   assert.equal(writes.filter(k => k === KEY).length, 1);
+  assert.equal(messages.length, 0);
+
   schedule();
-  listeners.pagehide[0]();
-  listeners.beforeunload[0]();
-  t.mock.timers.tick(400);
-  assert.equal(writes.filter(k => k === KEY).length, 1);
-  t.mock.timers.tick(600);
+  listeners.window.pagehide[0]();
   assert.equal(writes.filter(k => k === KEY).length, 2);
-  listeners.pagehide[0]();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].data.type, 'meta');
+  assert.equal(messages[0].data.key, KEY);
+  assert.equal(messages[0].origin, 'https://example.test');
+  listeners.document.visibilitychange[0]();
   assert.equal(writes.filter(k => k === KEY).length, 2);
+
+  schedule();
+  global.document.visibilityState = 'visible';
+  listeners.document.visibilitychange[0]();
+  assert.equal(writes.filter(k => k === KEY).length, 2);
+  global.document.visibilityState = 'hidden';
+  listeners.document.visibilitychange[0]();
+  assert.equal(writes.filter(k => k === KEY).length, 3);
+  assert.equal(messages.length, 2);
+  t.mock.timers.tick(1000);
+  assert.equal(writes.filter(k => k === KEY).length, 3);
 });
 
 test('compute does not rewrite the project save', () => {
@@ -429,8 +450,8 @@ test('compute does not rewrite the project save', () => {
   const saveBody = html.slice(html.indexOf('function saveState()'), html.indexOf('function loadState()'));
   assert.equal(saveBody.includes('prog'), false);
   assert.equal(saveBody.includes('mergeSave'), false);
-  assert.match(html, /const APP_VERSION = '1\.6\.1'/);
-  assert.match(html, /id="verBadge">v1\.6\.1/);
+  assert.match(html, /const APP_VERSION = '1\.6\.2'/);
+  assert.match(html, /id="verBadge">v1\.6\.2/);
 });
 
 test('route counters unlock later achievements', () => {

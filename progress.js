@@ -340,16 +340,22 @@ function performMetaWrite() {
   } catch (e) {}
 }
 
-// Write only a pending snapshot, and only when the one-per-second slot is free.
+// Pending hide/unload snapshot. Writes immediately, even inside the one-second window.
 function flushMeta() {
   try {
     if (!metaPending || metaIsDemo()) return;
-    if (metaHasWritten && (Date.now() - metaWroteAt) < 1000) return;
     if (metaTimer !== null) {
       clearTimeout(metaTimer);
       metaTimer = null;
     }
     performMetaWrite();
+  } catch (e) {}
+}
+
+function onVisibility() {
+  try {
+    const doc = globalThis.document;
+    if (doc && doc.visibilityState === 'hidden') flushMeta();
   } catch (e) {}
 }
 
@@ -361,6 +367,8 @@ function bindHide() {
     const fn = function () { flushMeta(); };
     w.addEventListener('pagehide', fn);
     w.addEventListener('beforeunload', fn);
+    const doc = globalThis.document;
+    if (doc && typeof doc.addEventListener === 'function') doc.addEventListener('visibilitychange', onVisibility);
   } catch (e) {}
 }
 
