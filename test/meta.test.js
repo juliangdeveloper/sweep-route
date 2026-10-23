@@ -19,7 +19,7 @@ const {
 
 const KEY = 'meta.v1.sweep-route';
 const SAVE = 'sweeproute_v1';
-const VERSION = '1.6.5';
+const VERSION = '1.6.6';
 
 function memoryStorage() {
   const m = new Map();
@@ -498,8 +498,8 @@ test('compute does not rewrite the project save', () => {
   const saveBody = html.slice(html.indexOf('function saveState()'), html.indexOf('function loadState()'));
   assert.equal(saveBody.includes('prog'), false);
   assert.equal(saveBody.includes('mergeSave'), false);
-  assert.match(html, /const APP_VERSION = '1\.6\.5'/);
-  assert.match(html, /id="verBadge">v1\.6\.5/);
+  assert.match(html, /const APP_VERSION = '1\.6\.6'/);
+  assert.match(html, /id="verBadge">v1\.6\.6/);
 });
 
 test('route counters unlock later achievements', () => {
