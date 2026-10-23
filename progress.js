@@ -331,13 +331,16 @@ function backfillMeta(version, fallbackSave) {
 function performMetaWrite() {
   metaTimer = null;
   metaPending = false;
-  noteMetaWrite();
   try {
     if (metaIsDemo()) return;
     const save = typeof metaRead === 'function' ? metaRead() : {};
     const stats = deriveStats(save || {});
     metaWrite(META_SLUG, metaVersion, { stats: stats, logros: logrosFromStats(stats) });
-  } catch (e) {}
+  } catch (e) {
+  } finally {
+    // Stamp after the write: reading a large save can take most of a second.
+    noteMetaWrite();
+  }
 }
 
 // Pending hide/unload snapshot. Writes immediately, even inside the one-second window.
