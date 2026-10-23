@@ -19,7 +19,7 @@ const {
 
 const KEY = 'meta.v1.sweep-route';
 const SAVE = 'sweeproute_v1';
-const VERSION = '1.6.4';
+const VERSION = '1.6.5';
 
 function memoryStorage() {
   const m = new Map();
@@ -396,7 +396,6 @@ test('the one-second window starts after a slow save read, not before it', (t) =
   const writes = countWrites();
   const start = new realDate(fixedNow).getTime();
   const schedule = createMetaPump(VERSION, () => {
-    // Reading and parsing a large save takes 973 ms.
     at(new realDate(start + 973).toISOString());
     return { gw: 4, gh: 4, mask: '16,1', counters: { routesTotal: 1 } };
   });
@@ -431,12 +430,10 @@ test('a failed meta write stays pending and is retried on the next attempt', (t)
   t.mock.timers.tick(0);
   assert.equal(localStorage.getItem(KEY), null);
 
-  // The next attempt (a flush on hide) writes the change that failed.
   flushMeta();
   assert.deepEqual(writes, [KEY]);
   assert.equal(JSON.parse(localStorage.getItem(KEY)).stats.routes_total, 2);
 
-  // Once written, nothing is pending.
   flushMeta();
   t.mock.timers.tick(2000);
   assert.deepEqual(writes, [KEY]);
@@ -501,8 +498,8 @@ test('compute does not rewrite the project save', () => {
   const saveBody = html.slice(html.indexOf('function saveState()'), html.indexOf('function loadState()'));
   assert.equal(saveBody.includes('prog'), false);
   assert.equal(saveBody.includes('mergeSave'), false);
-  assert.match(html, /const APP_VERSION = '1\.6\.4'/);
-  assert.match(html, /id="verBadge">v1\.6\.4/);
+  assert.match(html, /const APP_VERSION = '1\.6\.5'/);
+  assert.match(html, /id="verBadge">v1\.6\.5/);
 });
 
 test('route counters unlock later achievements', () => {

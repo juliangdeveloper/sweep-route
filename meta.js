@@ -1,8 +1,5 @@
 'use strict';
 
-// Project status, set by hand and bumped with the version. Never computed from play.
-// fase 1-6: Idea, Definición, Diseño, Construcción, Validación, Lanzamiento y mantenimiento.
-// fase_estado 0-4: pendiente, en curso, bloqueada, en revisión, completada.
 var PROYECTO = {
   objetivo: 'Calcular sobre un plano pintado la ruta de barrido más corta que cubre toda el área, medida en metros reales.',
   fase: 6,
@@ -16,7 +13,6 @@ function proyectoInt(n, lo, hi) {
   return typeof n === 'number' && Number.isInteger(n) && n >= lo && n <= hi;
 }
 
-// Clean copy of a proyecto block, or null when any field is missing or out of range.
 function metaProyecto(p) {
   try {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
@@ -29,12 +25,10 @@ function metaProyecto(p) {
   }
 }
 
-// Tests only: swap the block the writer uses (null restores PROYECTO).
 function metaSetProyecto(p) {
   proyectoSource = p === null ? PROYECTO : p;
 }
 
-// Adds the current proyecto block to a record being written, when it is valid.
 function withProyecto(record) {
   var p = metaProyecto(proyectoSource);
   if (p) record.proyecto = p;
@@ -103,7 +97,6 @@ function recordValid(parsed, slug) {
   return !!(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.v === 1 && parsed.slug === slug);
 }
 
-// Merge one snapshot into meta.v1.<slug>. Never throws. No write in demo/preview.
 function metaUpdate(slug, version, patch) {
   try {
     if (metaDemo()) return null;
