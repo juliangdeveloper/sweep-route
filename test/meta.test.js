@@ -412,6 +412,36 @@ test('the one-second window starts after a slow save read, not before it', (t) =
   assert.equal(writes.filter(k => k === KEY).length, 2);
 });
 
+test('a failed meta write stays pending and is retried on the next attempt', (t) => {
+  global.Date = realDate;
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  let failNext = true;
+  const writes = [];
+  const set = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = (k, v) => {
+    if (k === KEY && failNext) {
+      failNext = false;
+      throw new Error('QuotaExceededError');
+    }
+    writes.push(k);
+    set(k, v);
+  };
+  const schedule = createMetaPump(VERSION, () => ({ gw: 4, gh: 4, mask: '16,1', counters: { routesTotal: 2 } }));
+  schedule();
+  t.mock.timers.tick(0);
+  assert.equal(localStorage.getItem(KEY), null);
+
+  // The next attempt (a flush on hide) writes the change that failed.
+  flushMeta();
+  assert.deepEqual(writes, [KEY]);
+  assert.equal(JSON.parse(localStorage.getItem(KEY)).stats.routes_total, 2);
+
+  // Once written, nothing is pending.
+  flushMeta();
+  t.mock.timers.tick(2000);
+  assert.deepEqual(writes, [KEY]);
+});
+
 test('pagehide and hidden visibility flush a pending change immediately', (t) => {
   global.Date = realDate;
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });

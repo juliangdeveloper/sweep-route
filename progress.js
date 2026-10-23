@@ -330,12 +330,16 @@ function backfillMeta(version, fallbackSave) {
 
 function performMetaWrite() {
   metaTimer = null;
-  metaPending = false;
   try {
-    if (metaIsDemo()) return;
+    if (metaIsDemo()) {
+      metaPending = false;
+      return;
+    }
     const save = typeof metaRead === 'function' ? metaRead() : {};
     const stats = deriveStats(save || {});
-    metaWrite(META_SLUG, metaVersion, { stats: stats, logros: logrosFromStats(stats) });
+    // Clear the pending change only after the record is written, so a failed
+    // write is retried by the next schedule or flush.
+    if (metaWrite(META_SLUG, metaVersion, { stats: stats, logros: logrosFromStats(stats) })) metaPending = false;
   } catch (e) {
   } finally {
     // Stamp after the write: reading a large save can take most of a second.
