@@ -50,7 +50,7 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 <body>
 <header>
   <h1>🧹 Sweep<span>Route</span></h1>
-  <div id="verBadge">v1.5.2</div>
+  <div id="verBadge">v1.6.0</div>
   <div id="lenBadge">— <small>sin ruta</small></div>
 </header>
 <main>
@@ -102,8 +102,11 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 </div></div>
 <div id="msg"></div>
 
+<script src="meta.js?v=1.6.0"></script>
+<script src="progress.js?v=1.6.0"></script>
 <script>
 'use strict';
+const APP_VERSION = '1.6.0';
 /* ==================== estado ==================== */
 const LW = 900;                    // ancho logico del lienzo
 let LH = 675;                      // alto logico (cambia con la imagen)
@@ -118,6 +121,8 @@ let anim = null;                   // estado de animacion
 let undoStack = [];
 let calibLine = null;              // {x0,y0,x1,y1} en px logicos mientras se traza
 let rectDrag = null;
+let prog = { routesTotal:0, routesCover:0, routesOnce:0, routesVisit:0, routesReturn:0, bestCoverage:0, longestM:0, plansLoaded:0 };
+let scheduleMeta = function(){};
 
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -145,19 +150,33 @@ let saveT=null;
 function scheduleSave(){ clearTimeout(saveT); saveT=setTimeout(saveState, 400); }
 function rle(m){ const out=[]; let c=m[0],n=0; for(let i=0;i<m.length;i++){ if(m[i]===c&&n<65000)n++; else{out.push(n,c);c=m[i];n=1;} } out.push(n,c); return out.join(','); }
 function unrle(s, len){ const parts=s.split(','), m=new Uint8Array(len); let i=0; for(let p=0;p<parts.length;p+=2){ const n=+parts[p], v=+parts[p+1]; for(let k=0;k<n&&i<len;k++,i++) m[i]=v; } return m; }
+function snapshotForMeta(){
+  return { gw:GW, gh:GH, mask:rle(mask), pxPerM, calibrated,
+    broom:+$('broomW').value, retStart, mode:$('modeSel').value,
+    start, brush:$('brushSz').value, img: bgImg ? true : null, prog };
+}
 function saveState(){
   try{
-    const d = { gw:GW, gh:GH, mask:rle(mask), pxPerM, calibrated,
+    let prev = {};
+    try {
+      const raw = localStorage.getItem('sweeproute_v1');
+      if (raw) prev = JSON.parse(raw);
+    } catch (e) { prev = {}; }
+    const next = { gw:GW, gh:GH, mask:rle(mask), pxPerM, calibrated,
       broom:+$('broomW').value, retStart, mode:$('modeSel').value,
       start, brush:$('brushSz').value,
-      img: bgImg ? bgImg.src.slice(0, 3_500_000) : null };
+      img: bgImg ? bgImg.src.slice(0, 3_500_000) : null,
+      prog };
+    const d = (typeof mergeSave === 'function') ? mergeSave(prev, next) : next;
     localStorage.setItem('sweeproute_v1', JSON.stringify(d));
   }catch(e){ /* cuota llena: ignorar */ }
+  try { scheduleMeta(); } catch (e) {}
 }
 function loadState(){
   try{
     const d = JSON.parse(localStorage.getItem('sweeproute_v1'));
     if(!d) return false;
+    if (typeof normalizeProg === 'function') prog = normalizeProg(d.prog);
     if(d.img){ const im=new Image(); im.onload=()=>{ bgImg=im; bgAr=im.height/im.width; LH=Math.round(LW*bgAr); resizeCanvas(); rebuildGrid(); afterLoad(d); }; im.src=d.img; return true; }
     afterLoad(d); return true;
   }catch(e){ return false; }
@@ -169,7 +188,9 @@ function afterLoad(d){
   modeSel.value = d.mode || (d.modeVisit?'visit':'cover');
   syncMode();
   $('brushSz').value=d.brush||14; brushR=+$('brushSz').value; $('brushVal').textContent=brushR;
-  start = d.start||null; updateScaleInfo(); render();
+  start = d.start||null;
+  if (typeof normalizeProg === 'function') prog = normalizeProg(d.prog);
+  updateScaleInfo(); render();
 }
 
 /* ---------- imagen de fondo ---------- */
@@ -179,7 +200,10 @@ $('fileIn').onchange = e=>{
   const rd=new FileReader();
   rd.onload=()=>{ const im=new Image();
     im.onload=()=>{ pushUndo(); bgImg=im; bgAr=im.height/im.width; LH=Math.min(1500,Math.max(400,Math.round(LW*bgAr)));
-      resizeCanvas(); rebuildGrid(); start=null; route=null; toast('Plano cargado. Pinta el área transitable.'); scheduleSave(); render(); };
+      resizeCanvas(); rebuildGrid(); start=null; route=null;
+      if (typeof normalizeProg === 'function') prog = normalizeProg(prog);
+      prog.plansLoaded += 1;
+      toast('Plano cargado. Pinta el área transitable.'); scheduleSave(); render(); };
     im.src=rd.result; };
   rd.readAsDataURL(f); e.target.value='';
 };
@@ -675,6 +699,8 @@ function compute(){
   for(let i=0;i<GW*GH;i++) if(mask[i]){ painted++; if(cov[i]) hit++; }
   const covPct=painted?Math.round(100*hit/painted):0;
   route={segs, lenPx, covPct, Bpx:(mode==='cover')?B*cs:0, stops: mode==='visit'? (segs.length?1:0):0};
+  if (typeof recordRoute === 'function') prog = recordRoute(prog, mode, retStart, covPct, meters);
+  saveState();
   startAnim();
   const lenShow = calibrated ? (meters>=100?Math.round(meters):meters.toFixed(1))+' m' : Math.round(lenPx)+' px';
   $('lenBadge').innerHTML = lenShow + (calibrated?'':' <small>sin calibrar</small>') +
@@ -765,8 +791,11 @@ window.SR={
   route:()=>route
 };
 
+if (typeof createMetaPump === 'function') scheduleMeta = createMetaPump(APP_VERSION, snapshotForMeta);
 resizeCanvas(); rebuildGrid(); updateScaleInfo();
+try { $('verBadge').textContent = 'v' + APP_VERSION; } catch (e) {}
 if(loadState()){ toast('Proyecto restaurado ✓'); } else render();
+try { if (typeof backfillMeta === 'function') backfillMeta(APP_VERSION, snapshotForMeta()); } catch (e) {}
 </script>
 </body>
 </html>
