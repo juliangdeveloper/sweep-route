@@ -7,11 +7,52 @@ const MAX_CELLS = 62000;
 
 const metaApi = (typeof module === 'object' && module.exports) ? require('./meta.js') : null;
 
+// Declared stats, written in this order. Monotonic totals and bests never decrease.
+const STATS = [
+  { key: 'painted_cells' },                         // walkable cells in the saved mask
+  { key: 'zones' },                                 // regions of 4 or more cells
+  { key: 'calibrated' },                            // 1 once a real distance was entered
+  { key: 'px_per_m' },                              // scale; 60 when the save has none
+  { key: 'broom_cm' },                              // sweeper width in centimeters
+  { key: 'has_start' },
+  { key: 'return_to_start' },                       // "regresar al inicio" is on
+  { key: 'brush_px' },                              // brush diameter in canvas pixels
+  { key: 'has_plan' },                              // a floor-plan image is stored
+  { key: 'plans_loaded', monotonic: true },         // plans loaded
+  { key: 'routes_total', monotonic: true },         // routes computed
+  { key: 'routes_cover', monotonic: true },         // Cubrir todo
+  { key: 'routes_once', monotonic: true },          // Sin repetir
+  { key: 'routes_visit', monotonic: true },         // Visitar zonas
+  { key: 'routes_return', monotonic: true },        // routes that return to the start
+  { key: 'best_coverage', monotonic: true },        // best percent of the mask a route covered
+  { key: 'longest_m', monotonic: true },            // longest computed route, meters
+  { key: 'grid_cells' },
+  { key: 'painted_m2' }                             // painted area at the saved scale
+];
+
+function metaDeclareNow(list) {
+  try {
+    const fn = (metaApi && metaApi.metaDeclare) || globalThis.metaDeclare;
+    if (typeof fn === 'function') fn(list);
+  } catch (e) {}
+}
+metaDeclareNow(STATS);
+
 function metaWrite(slug, version, patch) {
   try {
     const fn = (metaApi && metaApi.metaUpdate) || globalThis.metaUpdate;
-    if (typeof fn === 'function') fn(slug, version, patch);
+    if (typeof fn === 'function') return fn(slug, version, patch);
   } catch (e) {}
+  return null;
+}
+
+function metaIsDemo() {
+  try {
+    const fn = (metaApi && metaApi.metaDemo) || globalThis.metaDemo;
+    return typeof fn === 'function' && !!fn();
+  } catch (e) {
+    return false;
+  }
 }
 
 function num(v, fallback) {
@@ -95,6 +136,34 @@ function normalizeProg(p) {
   return out;
 }
 
+function countersFromStats(stats) {
+  const s = stats && typeof stats === 'object' ? stats : {};
+  return normalizeProg({
+    routesTotal: s.routes_total,
+    routesCover: s.routes_cover,
+    routesOnce: s.routes_once,
+    routesVisit: s.routes_visit,
+    routesReturn: s.routes_return,
+    bestCoverage: s.best_coverage,
+    longestM: s.longest_m,
+    plansLoaded: s.plans_loaded
+  });
+}
+
+function countersFromMeta() {
+  try {
+    const store = globalThis.localStorage;
+    if (!store) return emptyProg();
+    const raw = store.getItem('meta.v1.' + META_SLUG);
+    if (!raw) return emptyProg();
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.v !== 1 || parsed.slug !== META_SLUG) return emptyProg();
+    return countersFromStats(parsed.stats);
+  } catch (e) {
+    return emptyProg();
+  }
+}
+
 function recordRoute(prog, mode, retStart, covPct, meters) {
   const p = normalizeProg(prog);
   p.routesTotal += 1;
@@ -109,13 +178,6 @@ function recordRoute(prog, mode, retStart, covPct, meters) {
   return p;
 }
 
-// Copy of the previous save plus these fields. Extra keys stay.
-function mergeSave(prev, next) {
-  const base = (prev && typeof prev === 'object' && !Array.isArray(prev)) ? prev : {};
-  const add = (next && typeof next === 'object' && !Array.isArray(next)) ? next : {};
-  return Object.assign({}, base, add);
-}
-
 function paintedM2(painted, gw, pxPerM) {
   if (!painted || !gw || !pxPerM) return 0;
   const cellM = (LOGIC_W / gw) / pxPerM;
@@ -124,7 +186,6 @@ function paintedM2(painted, gw, pxPerM) {
   return Math.round(area * 100) / 100;
 }
 
-// Flat numeric stats for meta.v1.sweep-route. At most 20 keys.
 function deriveStats(save) {
   const src = (save && typeof save === 'object') ? save : {};
   let gw = posInt(src.gw);
@@ -133,31 +194,31 @@ function deriveStats(save) {
   const mask = decodeMask(src.mask, gw * gh);
   let painted = 0;
   for (let i = 0; i < mask.length; i++) if (mask[i]) painted++;
-  const prog = normalizeProg(src.prog);
+  const counters = normalizeProg(src.counters);
   const pxPerM = num(src.pxPerM, 60);
   const broom = num(src.broom, 0.35);
   const brush = num(src.brush, 14);
-  const hasPlan = src.img ? 1 : 0;
+  const hasPlan = src.hasPlan ? 1 : (src.img ? 1 : 0);
   return {
-    painted_cells: painted,                         // walkable cells in the saved mask
-    zones: countZones(mask, gw, gh),                // regions of 4 or more cells
-    calibrated: src.calibrated ? 1 : 0,             // 1 once a real distance was entered
-    px_per_m: pxPerM,                               // scale; 60 when the save has none
-    broom_cm: Math.round(broom * 100),              // sweeper width in centimeters
+    painted_cells: painted,
+    zones: countZones(mask, gw, gh),
+    calibrated: src.calibrated ? 1 : 0,
+    px_per_m: pxPerM,
+    broom_cm: Math.round(broom * 100),
     has_start: (src.start && typeof src.start === 'object') ? 1 : 0,
-    return_to_start: src.retStart ? 1 : 0,          // "regresar al inicio" is on
-    brush_px: brush,                                // brush diameter in canvas pixels
-    has_plan: hasPlan,                              // a floor-plan image is stored
-    plans_loaded: Math.max(prog.plansLoaded, hasPlan),
-    routes_total: prog.routesTotal,                 // routes computed
-    routes_cover: prog.routesCover,                 // Cubrir todo
-    routes_once: prog.routesOnce,                   // Sin repetir
-    routes_visit: prog.routesVisit,                 // Visitar zonas
-    routes_return: prog.routesReturn,               // routes that return to the start
-    best_coverage: prog.bestCoverage,               // best percent of the mask the route covered
-    longest_m: prog.longestM,                       // longest computed route, meters
+    return_to_start: src.retStart ? 1 : 0,
+    brush_px: brush,
+    has_plan: hasPlan,
+    plans_loaded: Math.max(counters.plansLoaded, hasPlan),
+    routes_total: counters.routesTotal,
+    routes_cover: counters.routesCover,
+    routes_once: counters.routesOnce,
+    routes_visit: counters.routesVisit,
+    routes_return: counters.routesReturn,
+    best_coverage: counters.bestCoverage,
+    longest_m: counters.longestM,
     grid_cells: gw * gh,
-    painted_m2: paintedM2(painted, gw, pxPerM)      // painted area at the saved scale
+    painted_m2: paintedM2(painted, gw, pxPerM)
   };
 }
 
@@ -207,54 +268,114 @@ function projectStore() {
   return null;
 }
 
-// If meta.v1.sweep-route is absent, write it once from the current save.
-// An existing value, including corrupt JSON, is left untouched.
+function rawRecordValid(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return !!(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.v === 1 && parsed.slug === META_SLUG);
+  } catch (e) {
+    return false;
+  }
+}
+
+let metaHasWritten = false;
+let metaWroteAt = 0;
+let metaPending = false;
+let metaTimer = null;
+let metaRead = null;
+let metaVersion = '';
+let hideWindow = null;
+
+function resetMetaClock() {
+  metaHasWritten = false;
+  metaWroteAt = 0;
+  metaPending = false;
+  if (metaTimer !== null) {
+    clearTimeout(metaTimer);
+    metaTimer = null;
+  }
+}
+
+function noteMetaWrite() {
+  metaHasWritten = true;
+  metaWroteAt = Date.now();
+}
+
+// If the meta key is missing or corrupt, write it once from the current save.
+// A valid record is left untouched. Corrupt raw text is copied to the .corrupt key.
 function backfillMeta(version, fallbackSave) {
   try {
+    if (metaIsDemo()) return;
     const store = projectStore();
     if (!store) return;
     const key = 'meta.v1.' + META_SLUG;
-    const existing = store.getItem(key);
-    if (existing != null) {
-      try { JSON.parse(existing); } catch (e) {}
-      return;
-    }
+    let existing = null;
+    try { existing = store.getItem(key); } catch (e) { return; }
+    if (existing != null && rawRecordValid(existing)) return;
     let save = null;
     try {
       const raw = store.getItem(SAVE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') save = parsed;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) save = parsed;
       }
     } catch (e) {
       save = {};
     }
     if (save == null) save = (fallbackSave && typeof fallbackSave === 'object') ? fallbackSave : {};
     const stats = deriveStats(save);
-    metaWrite(META_SLUG, version, { stats: stats, logros: logrosFromStats(stats) });
+    const wrote = metaWrite(META_SLUG, version, { stats: stats, logros: logrosFromStats(stats) });
+    if (wrote) noteMetaWrite();
   } catch (e) {}
 }
 
-// Trailing throttle: at most one metaUpdate per second, using the latest save.
+function performMetaWrite() {
+  metaTimer = null;
+  metaPending = false;
+  noteMetaWrite();
+  try {
+    if (metaIsDemo()) return;
+    const save = typeof metaRead === 'function' ? metaRead() : {};
+    const stats = deriveStats(save || {});
+    metaWrite(META_SLUG, metaVersion, { stats: stats, logros: logrosFromStats(stats) });
+  } catch (e) {}
+}
+
+// Write only a pending snapshot, and only when the one-per-second slot is free.
+function flushMeta() {
+  try {
+    if (!metaPending || metaIsDemo()) return;
+    if (metaHasWritten && (Date.now() - metaWroteAt) < 1000) return;
+    if (metaTimer !== null) {
+      clearTimeout(metaTimer);
+      metaTimer = null;
+    }
+    performMetaWrite();
+  } catch (e) {}
+}
+
+function bindHide() {
+  try {
+    const w = globalThis.window;
+    if (!w || typeof w.addEventListener !== 'function' || hideWindow === w) return;
+    hideWindow = w;
+    const fn = function () { flushMeta(); };
+    w.addEventListener('pagehide', fn);
+    w.addEventListener('beforeunload', fn);
+  } catch (e) {}
+}
+
+// At most one meta write per second, including a backfill that already wrote.
 function createMetaPump(version, readSave) {
-  let timer = null;
-  let wroteAt = 0;
-  let started = false;
-  function flush() {
-    timer = null;
-    started = true;
-    wroteAt = Date.now();
-    try {
-      const save = typeof readSave === 'function' ? readSave() : {};
-      const stats = deriveStats(save || {});
-      metaWrite(META_SLUG, version, { stats: stats, logros: logrosFromStats(stats) });
-    } catch (e) {}
-  }
+  metaVersion = version;
+  metaRead = readSave;
+  bindHide();
   return function scheduleMeta() {
     try {
-      if (timer !== null) return;
-      const wait = started ? Math.max(0, 1000 - (Date.now() - wroteAt)) : 0;
-      timer = setTimeout(flush, wait);
+      if (metaIsDemo()) return;
+      metaPending = true;
+      if (metaTimer !== null) return;
+      const wait = metaHasWritten ? Math.max(0, 1000 - (Date.now() - metaWroteAt)) : 0;
+      metaTimer = setTimeout(performMetaWrite, wait);
     } catch (e) {}
   };
 }
@@ -262,24 +383,31 @@ function createMetaPump(version, readSave) {
 const progressApi = {
   META_SLUG: META_SLUG,
   SAVE_KEY: SAVE_KEY,
+  STATS: STATS,
   ACHIEVEMENTS: ACHIEVEMENTS,
   deriveStats: deriveStats,
   logrosFromStats: logrosFromStats,
   backfillMeta: backfillMeta,
   createMetaPump: createMetaPump,
+  flushMeta: flushMeta,
+  resetMetaClock: resetMetaClock,
   recordRoute: recordRoute,
   normalizeProg: normalizeProg,
-  mergeSave: mergeSave
+  countersFromMeta: countersFromMeta,
+  countersFromStats: countersFromStats
 };
 
 if (typeof module === 'object' && module.exports) {
   module.exports = progressApi;
 }
+globalThis.STATS = STATS;
 globalThis.ACHIEVEMENTS = ACHIEVEMENTS;
 globalThis.deriveStats = deriveStats;
 globalThis.logrosFromStats = logrosFromStats;
 globalThis.backfillMeta = backfillMeta;
 globalThis.createMetaPump = createMetaPump;
+globalThis.flushMeta = flushMeta;
+globalThis.resetMetaClock = resetMetaClock;
 globalThis.recordRoute = recordRoute;
 globalThis.normalizeProg = normalizeProg;
-globalThis.mergeSave = mergeSave;
+globalThis.countersFromMeta = countersFromMeta;

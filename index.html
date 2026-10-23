@@ -50,7 +50,7 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 <body>
 <header>
   <h1>🧹 Sweep<span>Route</span></h1>
-  <div id="verBadge">v1.6.0</div>
+  <div id="verBadge">v1.6.1</div>
   <div id="lenBadge">— <small>sin ruta</small></div>
 </header>
 <main>
@@ -102,11 +102,11 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 </div></div>
 <div id="msg"></div>
 
-<script src="meta.js?v=1.6.0"></script>
-<script src="progress.js?v=1.6.0"></script>
+<script src="meta.js?v=1.6.1"></script>
+<script src="progress.js?v=1.6.1"></script>
 <script>
 'use strict';
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 /* ==================== estado ==================== */
 const LW = 900;                    // ancho logico del lienzo
 let LH = 675;                      // alto logico (cambia con la imagen)
@@ -153,21 +153,14 @@ function unrle(s, len){ const parts=s.split(','), m=new Uint8Array(len); let i=0
 function snapshotForMeta(){
   return { gw:GW, gh:GH, mask:rle(mask), pxPerM, calibrated,
     broom:+$('broomW').value, retStart, mode:$('modeSel').value,
-    start, brush:$('brushSz').value, img: bgImg ? true : null, prog };
+    start, brush:$('brushSz').value, hasPlan: bgImg ? 1 : 0, counters: prog };
 }
 function saveState(){
   try{
-    let prev = {};
-    try {
-      const raw = localStorage.getItem('sweeproute_v1');
-      if (raw) prev = JSON.parse(raw);
-    } catch (e) { prev = {}; }
-    const next = { gw:GW, gh:GH, mask:rle(mask), pxPerM, calibrated,
+    const d = { gw:GW, gh:GH, mask:rle(mask), pxPerM, calibrated,
       broom:+$('broomW').value, retStart, mode:$('modeSel').value,
       start, brush:$('brushSz').value,
-      img: bgImg ? bgImg.src.slice(0, 3_500_000) : null,
-      prog };
-    const d = (typeof mergeSave === 'function') ? mergeSave(prev, next) : next;
+      img: bgImg ? bgImg.src.slice(0, 3_500_000) : null };
     localStorage.setItem('sweeproute_v1', JSON.stringify(d));
   }catch(e){ /* cuota llena: ignorar */ }
   try { scheduleMeta(); } catch (e) {}
@@ -176,7 +169,6 @@ function loadState(){
   try{
     const d = JSON.parse(localStorage.getItem('sweeproute_v1'));
     if(!d) return false;
-    if (typeof normalizeProg === 'function') prog = normalizeProg(d.prog);
     if(d.img){ const im=new Image(); im.onload=()=>{ bgImg=im; bgAr=im.height/im.width; LH=Math.round(LW*bgAr); resizeCanvas(); rebuildGrid(); afterLoad(d); }; im.src=d.img; return true; }
     afterLoad(d); return true;
   }catch(e){ return false; }
@@ -186,10 +178,9 @@ function afterLoad(d){
   pxPerM = d.pxPerM||60; calibrated = !!d.calibrated;
   $('broomW').value = d.broom||0.35; retStart=!!d.retStart; $('retStart').checked=retStart;
   modeSel.value = d.mode || (d.modeVisit?'visit':'cover');
-  syncMode();
+  syncMode(false);
   $('brushSz').value=d.brush||14; brushR=+$('brushSz').value; $('brushVal').textContent=brushR;
   start = d.start||null;
-  if (typeof normalizeProg === 'function') prog = normalizeProg(d.prog);
   updateScaleInfo(); render();
 }
 
@@ -217,7 +208,7 @@ document.querySelectorAll('[data-tool]').forEach(ch=>{
 $('brushSz').oninput=e=>{ brushR=+e.target.value; $('brushVal').textContent=brushR; scheduleSave(); };
 $('retStart').onchange=e=>{ retStart=e.target.checked; scheduleSave(); };
 let mode='cover';
-function syncMode(){ mode=$('modeSel').value; scheduleSave(); }
+function syncMode(persist){ mode=$('modeSel').value; if (persist !== false) scheduleSave(); }
 $('modeSel').onchange=syncMode;
 $('btnUndo').onclick=doUndo;
 $('btnClear').onclick=()=>{ pushUndo(); mask.fill(0); start=null; route=null; render(); scheduleSave(); };
@@ -700,7 +691,7 @@ function compute(){
   const covPct=painted?Math.round(100*hit/painted):0;
   route={segs, lenPx, covPct, Bpx:(mode==='cover')?B*cs:0, stops: mode==='visit'? (segs.length?1:0):0};
   if (typeof recordRoute === 'function') prog = recordRoute(prog, mode, retStart, covPct, meters);
-  saveState();
+  try { scheduleMeta(); } catch (e) {}
   startAnim();
   const lenShow = calibrated ? (meters>=100?Math.round(meters):meters.toFixed(1))+' m' : Math.round(lenPx)+' px';
   $('lenBadge').innerHTML = lenShow + (calibrated?'':' <small>sin calibrar</small>') +
@@ -796,6 +787,7 @@ resizeCanvas(); rebuildGrid(); updateScaleInfo();
 try { $('verBadge').textContent = 'v' + APP_VERSION; } catch (e) {}
 if(loadState()){ toast('Proyecto restaurado ✓'); } else render();
 try { if (typeof backfillMeta === 'function') backfillMeta(APP_VERSION, snapshotForMeta()); } catch (e) {}
+try { if (typeof countersFromMeta === 'function') prog = countersFromMeta(); } catch (e) {}
 </script>
 </body>
 </html>
