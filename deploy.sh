@@ -19,6 +19,8 @@ esac
 NV="$A.$B.$C"
 
 sed -i "s/id=\"verBadge\">v[0-9.]*/id=\"verBadge\">v$NV/" index.html
+sed -i "s/const APP_VERSION = '[0-9.][0-9.]*'/const APP_VERSION = '$NV'/" index.html
+sed -i "s/?v=[0-9.][0-9.]*/?v=$NV/g" index.html
 git add -A
 git -c user.name="Usuario" -c user.email="juliangdeveloper@users.noreply.github.com" commit -m "v$NV: $MSG" >/dev/null || { echo "nada que commitear"; exit 0; }
 
