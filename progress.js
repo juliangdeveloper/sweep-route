@@ -7,27 +7,26 @@ const MAX_CELLS = 62000;
 
 const metaApi = (typeof module === 'object' && module.exports) ? require('./meta.js') : null;
 
-// Declared stats, written in this order. Monotonic totals and bests never decrease.
 const STATS = [
-  { key: 'painted_cells' },                         // walkable cells in the saved mask
-  { key: 'zones' },                                 // regions of 4 or more cells
-  { key: 'calibrated' },                            // 1 once a real distance was entered
-  { key: 'px_per_m' },                              // scale; 60 when the save has none
-  { key: 'broom_cm' },                              // sweeper width in centimeters
+  { key: 'painted_cells' },
+  { key: 'zones' },
+  { key: 'calibrated' },
+  { key: 'px_per_m' },
+  { key: 'broom_cm' },
   { key: 'has_start' },
-  { key: 'return_to_start' },                       // "regresar al inicio" is on
-  { key: 'brush_px' },                              // brush diameter in canvas pixels
-  { key: 'has_plan' },                              // a floor-plan image is stored
-  { key: 'plans_loaded', monotonic: true },         // plans loaded
-  { key: 'routes_total', monotonic: true },         // routes computed
-  { key: 'routes_cover', monotonic: true },         // Cubrir todo
-  { key: 'routes_once', monotonic: true },          // Sin repetir
-  { key: 'routes_visit', monotonic: true },         // Visitar zonas
-  { key: 'routes_return', monotonic: true },        // routes that return to the start
-  { key: 'best_coverage', monotonic: true },        // best percent of the mask a route covered
-  { key: 'longest_m', monotonic: true },            // longest computed route, meters
+  { key: 'return_to_start' },
+  { key: 'brush_px' },
+  { key: 'has_plan' },
+  { key: 'plans_loaded', monotonic: true },
+  { key: 'routes_total', monotonic: true },
+  { key: 'routes_cover', monotonic: true },
+  { key: 'routes_once', monotonic: true },
+  { key: 'routes_visit', monotonic: true },
+  { key: 'routes_return', monotonic: true },
+  { key: 'best_coverage', monotonic: true },
+  { key: 'longest_m', monotonic: true },
   { key: 'grid_cells' },
-  { key: 'painted_m2' }                             // painted area at the saved scale
+  { key: 'painted_m2' }
 ];
 
 function metaDeclareNow(list) {
@@ -83,7 +82,6 @@ function decodeMask(s, len) {
   try { return unrle(s, len); } catch (e) { return new Uint8Array(len); }
 }
 
-// Connected walkable regions of at least 4 cells, same rule as the planner.
 function countZones(mask, gw, gh) {
   const n = gw * gh;
   if (!n || !mask || mask.length < n) return 0;
@@ -222,31 +220,18 @@ function deriveStats(save) {
   };
 }
 
-// Stable achievement ids. Never rename or reuse an id.
 const ACHIEVEMENTS = [
-  // At least one walkable cell is painted.
   { id: 'first_paint', condition: function (s) { return s.painted_cells >= 1; } },
-  // A real area, not a single brush dab (400 cells or more).
   { id: 'area_ready', condition: function (s) { return s.painted_cells >= 400; } },
-  // A start flag is stored.
   { id: 'start_set', condition: function (s) { return s.has_start === 1; } },
-  // Scale was calibrated from a known distance.
   { id: 'scale_set', condition: function (s) { return s.calibrated === 1; } },
-  // A floor plan was loaded (image present, or a later load was counted).
   { id: 'plan_loaded', condition: function (s) { return s.has_plan === 1 || s.plans_loaded >= 1; } },
-  // At least one route was computed.
   { id: 'first_route', condition: function (s) { return s.routes_total >= 1; } },
-  // A route covered 100% of the painted area.
   { id: 'full_cover', condition: function (s) { return s.best_coverage >= 100; } },
-  // A computed route returned to the start.
   { id: 'closed_loop', condition: function (s) { return s.routes_return >= 1; } },
-  // Cubrir todo, Sin repetir, and Visitar zonas have each been used.
   { id: 'all_modes', condition: function (s) { return s.routes_cover >= 1 && s.routes_once >= 1 && s.routes_visit >= 1; } },
-  // Two or more separate walkable zones.
   { id: 'multi_zone', condition: function (s) { return s.zones >= 2; } },
-  // Ten routes computed.
   { id: 'routes_10', condition: function (s) { return s.routes_total >= 10; } },
-  // A computed route is at least 50 meters.
   { id: 'route_50m', condition: function (s) { return s.longest_m >= 50; } }
 ];
 
@@ -300,8 +285,6 @@ function noteMetaWrite() {
   metaWroteAt = Date.now();
 }
 
-// If the meta key is missing or corrupt, write it once from the current save.
-// A valid record is left untouched. Corrupt raw text is copied to the .corrupt key.
 function backfillMeta(version, fallbackSave) {
   try {
     if (metaIsDemo()) return;
@@ -337,17 +320,13 @@ function performMetaWrite() {
     }
     const save = typeof metaRead === 'function' ? metaRead() : {};
     const stats = deriveStats(save || {});
-    // Clear the pending change only after the record is written, so a failed
-    // write is retried by the next schedule or flush.
     if (metaWrite(META_SLUG, metaVersion, { stats: stats, logros: logrosFromStats(stats) })) metaPending = false;
   } catch (e) {
   } finally {
-    // Stamp after the write: reading a large save can take most of a second.
     noteMetaWrite();
   }
 }
 
-// Pending hide/unload snapshot. Writes immediately, even inside the one-second window.
 function flushMeta() {
   try {
     if (!metaPending || metaIsDemo()) return;
@@ -379,7 +358,6 @@ function bindHide() {
   } catch (e) {}
 }
 
-// At most one meta write per second, including a backfill that already wrote.
 function createMetaPump(version, readSave) {
   metaVersion = version;
   metaRead = readSave;

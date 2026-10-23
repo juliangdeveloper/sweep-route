@@ -50,7 +50,7 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 <body>
 <header>
   <h1>🧹 Sweep<span>Route</span></h1>
-  <div id="verBadge">v1.6.4</div>
+  <div id="verBadge">v1.6.5</div>
   <div id="lenBadge">— <small>sin ruta</small></div>
 </header>
 <main>
@@ -102,24 +102,23 @@ footer{color:var(--dim);font-size:.72em;padding:8px 0 20px;text-align:center}
 </div></div>
 <div id="msg"></div>
 
-<script src="meta.js?v=1.6.4"></script>
-<script src="progress.js?v=1.6.4"></script>
+<script src="meta.js?v=1.6.5"></script>
+<script src="progress.js?v=1.6.5"></script>
 <script>
 'use strict';
-const APP_VERSION = '1.6.4';
-/* ==================== estado ==================== */
-const LW = 900;                    // ancho logico del lienzo
-let LH = 675;                      // alto logico (cambia con la imagen)
-let GW = 225, GH = 169;            // tamano de la grilla (celdas de ~4px logicos)
-let mask = new Uint8Array(GW*GH);  // 1 = transitable
+const APP_VERSION = '1.6.5';
+const LW = 900;
+let LH = 675;
+let GW = 225, GH = 169;
+let mask = new Uint8Array(GW*GH);
 let bgImg = null, bgAr = 4/3;
 let pxPerM = 60, calibrated = false;
 let tool = 'brush', brushR = 14;
 let start = null, retStart = false;
-let route = null;                  // {segs:[{a,b,dash}], pts, lenPx, covPct, stops}
-let anim = null;                   // estado de animacion
+let route = null;
+let anim = null;
 let undoStack = [];
-let calibLine = null;              // {x0,y0,x1,y1} en px logicos mientras se traza
+let calibLine = null;
 let rectDrag = null;
 let prog = { routesTotal:0, routesCover:0, routesOnce:0, routesVisit:0, routesReturn:0, bestCoverage:0, longestM:0, plansLoaded:0 };
 let scheduleMeta = function(){};
@@ -127,7 +126,6 @@ let scheduleMeta = function(){};
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 
-/* ==================== utilidades ==================== */
 const $ = id => document.getElementById(id);
 function toast(t, ms=2200){ const m=$('msg'); m.textContent=t; m.classList.add('show'); clearTimeout(m._t); m._t=setTimeout(()=>m.classList.remove('show'), ms); }
 function resizeCanvas(){ cv.width = LW; cv.height = LH; cv.style.aspectRatio = LW+'/'+LH; }
@@ -145,7 +143,6 @@ const inB = (x,y)=> x>=0 && y>=0 && x<GW && y<GH;
 function pushUndo(){ undoStack.push(mask.slice()); if (undoStack.length>25) undoStack.shift(); }
 function doUndo(){ if(!undoStack.length) return toast('Nada que deshacer'); mask = undoStack.pop(); route=null; scheduleSave(); render(); }
 
-/* ---------- persistencia ---------- */
 let saveT=null;
 function scheduleSave(){ clearTimeout(saveT); saveT=setTimeout(saveState, 400); }
 function rle(m){ const out=[]; let c=m[0],n=0; for(let i=0;i<m.length;i++){ if(m[i]===c&&n<65000)n++; else{out.push(n,c);c=m[i];n=1;} } out.push(n,c); return out.join(','); }
@@ -162,7 +159,7 @@ function saveState(){
       start, brush:$('brushSz').value,
       img: bgImg ? bgImg.src.slice(0, 3_500_000) : null };
     localStorage.setItem('sweeproute_v1', JSON.stringify(d));
-  }catch(e){ /* cuota llena: ignorar */ }
+  }catch(e){ }
   try { scheduleMeta(); } catch (e) {}
 }
 function loadState(){
@@ -184,7 +181,6 @@ function afterLoad(d){
   updateScaleInfo(); render();
 }
 
-/* ---------- imagen de fondo ---------- */
 $('btnImg').onclick = ()=>$('fileIn').click();
 $('fileIn').onchange = e=>{
   const f=e.target.files[0]; if(!f) return;
@@ -200,7 +196,6 @@ $('fileIn').onchange = e=>{
 };
 $('btnNoImg').onclick=()=>{ bgImg=null; LH=675; resizeCanvas(); rebuildGrid(); start=null; route=null; render(); scheduleSave(); };
 
-/* ---------- herramientas ---------- */
 document.querySelectorAll('[data-tool]').forEach(ch=>{
   ch.onclick=()=>{ document.querySelectorAll('[data-tool]').forEach(c=>c.classList.remove('on'));
     ch.classList.add('on'); tool=ch.dataset.tool; };
@@ -214,7 +209,6 @@ $('btnUndo').onclick=doUndo;
 $('btnClear').onclick=()=>{ pushUndo(); mask.fill(0); start=null; route=null; render(); scheduleSave(); };
 $('btnReplay').onclick=()=>{ if(route){ startAnim(); } };
 
-/* ---------- puntero ---------- */
 function evPos(e){ const r=cv.getBoundingClientRect(); return { x:(e.clientX-r.left)*LW/r.width, y:(e.clientY-r.top)*LH/r.height }; }
 function toGrid(p){ return { x:Math.floor(p.x/LW*GW), y:Math.floor(p.y/LH*GH) }; }
 function stamp(g, erase){
@@ -273,7 +267,6 @@ function nearestPainted(g){
   return best;
 }
 
-/* ---------- calibracion ---------- */
 $('calibOk').onclick=()=>{
   const m=parseFloat($('calibM').value);
   if(m>0){ const px=parseFloat($('calibM').dataset.px); pxPerM=px/m; calibrated=true;
@@ -285,7 +278,6 @@ function updateScaleInfo(){ const s=$('scaleInfo');
   if(calibrated){ s.textContent='escala: 1 m = '+pxPerM.toFixed(0)+' px ✓'; s.classList.add('ok'); }
   else { s.textContent='escala no calibrada — se asume 1 m ≈ 60 px'; s.classList.remove('ok'); } }
 
-/* ==================== algoritmos ==================== */
 function components(){
   const lab=new Int32Array(GW*GH).fill(-1); const comps=[]; 
   for(let i=0;i<GW*GH;i++){
@@ -299,7 +291,6 @@ function components(){
   }
   return comps.filter(c=>c.cells.length>=4);
 }
-/* 8 direcciones: ortogonal costo 1, diagonal √2. Sin cortar esquinas. */
 const SQRT2 = Math.SQRT2;
 const DX = new Int8Array([1,-1,0,0, 1,1,-1,-1]);
 const DY = new Int8Array([0,0,1,-1, 1,-1,1,-1]);
@@ -315,8 +306,6 @@ function reconstruct(prev, target){
   while(c!==-1 && guard-- > 0){ path.push({x:c%GW, y:(c/GW)|0}); c=prev[c]; }
   return path.reverse();
 }
-/* A* si hay `goal` (un destino); Dijkstra si hay `goals` (para al alcanzarlos todos).
-   Devuelve distancias y predecesores con la misma métrica. */
 function routeSearch(origin, opt){
   if(!inB(origin.x, origin.y) || !mask[idx(origin.x, origin.y)]) return null;
   const N = GW*GH;
@@ -405,7 +394,6 @@ function bfsPath(from, to){
   const res=routeSearch(from, {goal:to});
   return res ? reconstruct(res.prev, idx(to.x, to.y)) : null;
 }
-/* Supercover entre centros de celda: toda celda que el segmento toca, incluidas las esquinas. */
 function segClear(a, b){
   if(!inB(a.x,a.y)||!inB(b.x,b.y)) return false;
   const x0=a.x, y0=a.y, x1=b.x, y1=b.y;
@@ -436,7 +424,6 @@ function simplify(path){
   }
   out.push(path[path.length-1]); return out;
 }
-/* Atajo recto solo si no toca celdas bloqueadas; si no, el camino interior. Salto punteado si no hay camino. */
 function linkSegs(out, a, b, dash){
   if(a.x===b.x && a.y===b.y) return;
   if(segClear(a, b)){ out.push({a, b, dash}); return; }
@@ -447,7 +434,6 @@ function linkSegs(out, a, b, dash){
   } else out.push({a, b, dash:true});
 }
 
-/* ---- modo CUBRIR: franjas serpenteantes con ancho del barredor ---- */
 function coverPlan(startCell, B){
   const comps=components(); if(!comps.length) return null;
   const segs=[];
@@ -476,7 +462,6 @@ function coverPlan(startCell, B){
     const span = hi-lo;
     const nP = Math.max(1, Math.round(span/B)+1);
     const rows=[...new Set(Array.from({length:nP},(_,k)=>Math.round(lo+span*k/Math.max(1,nP-1))))].sort((a,b)=>a-b);
-    // arrancar por el lado mas cercano al punto actual
     const eCoord = vertical?cur.x:cur.y;
     if(Math.abs(eCoord-lo) > Math.abs(eCoord-hi)) rows.reverse();
     const local=[];
@@ -501,7 +486,6 @@ function coverPlan(startCell, B){
         local.push({a:A,b:Bp,dash:false}); lastPt=Bp;
       });
     });
-    // conector de entrada al componente (transito, punteado)
     if(firstPt){
       if(!lastPt) lastPt=firstPt;
       linkSegs(segs, cur, firstPt, true);
@@ -509,14 +493,12 @@ function coverPlan(startCell, B){
     local.forEach(sg=>segs.push(sg));
     if(lastPt) cur=lastPt;
   }
-  // regreso al inicio (transito, punteado)
   if(retStart){
     linkSegs(segs, cur, startCell, true);
   }
   return segs;
 }
 
-/* ---- modo SIN REPETIR: un solo trazo que no repasa celdas ---- */
 function oncePlan(startCell, B){
   const comps=components(); if(!comps.length) return null;
   const segs=[];
@@ -530,8 +512,7 @@ function oncePlan(startCell, B){
       if(d<bd){bd=d;bi=i;} });
     const comp=pend.splice(bi,1)[0];
     const set=new Set(comp.cells);
-    // resolucion: celdas gruesas (paso ~2 celdas) para un grafo manejable
-    const step=Math.max(1, Math.min(3, Math.round(B/2)));    const grid=new Map(); // clave "x,y" -> {x,y,nb:[]}
+    const step=Math.max(1, Math.min(3, Math.round(B/2)));    const grid=new Map();
     const key=(x,y)=>x+','+y;
     comp.cells.forEach(c=>{ const x=c%GW,y=(c/GW)|0;
       if(((x%step)+step)%step===0 && ((y%step)+step)%step===0) grid.set(key(x,y),{x,y,nb:[]}); });
@@ -541,13 +522,9 @@ function oncePlan(startCell, B){
       [[step,0],[-step,0],[0,step],[0,-step]].forEach(d=>{
         const m=grid.get(key(n.x+d[0],n.y+d[1])); if(m) n.nb.push(m); });
     });
-    // el submuestreo puede dejar el grafo sin aristas; el salto sigue el interior si hay camino
-    // entrada al componente: nodo mas cercano a cur
     let entry=nodes[0], ebd=1e18;
     nodes.forEach(n=>{ const d=(n.x-cur.x)**2+(n.y-cur.y)**2; if(d<ebd){ebd=d;entry=n;} });
-    // conector de entrada al componente (transito punteado)
     linkSegs(segs, cur, {x:entry.x,y:entry.y}, true);
-    // paseo que visita cada NODO una sola vez; saltos punteados si se atasca
     const visited=new Set();
     let n=entry;
     visited.add(key(n.x,n.y));
@@ -564,7 +541,6 @@ function oncePlan(startCell, B){
         n=nxt;
         continue;
       }
-      // sin vecinos nuevos: saltar al nodo no visitado mas cercano
       let target=null, tbd=1e18;
       for(const m of nodes){
         if(visited.has(key(m.x,m.y))) continue;
@@ -582,7 +558,6 @@ function oncePlan(startCell, B){
   return segs;
 }
 
-/* ---- modo VISITAR: POIs + vecino cercano + 2-opt ---- */
 function visitPlan(startCell){
   const comps=components(); if(!comps.length) return null;
   let stride=6, pois=[];
@@ -599,7 +574,6 @@ function visitPlan(startCell){
   const seen=new Set([idx(startCell.x, startCell.y)]);
   for(const p of pois){ const k=idx(p.x,p.y); if(seen.has(k)) continue; seen.add(k); nodes.push(p); }
   const N=nodes.length;
-  // una búsqueda de fuente única por punto (Dijkstra 8-dir); el camino se reconstruye solo en el tour
   const D=Array.from({length:N},()=>{ const a=new Float64Array(N); a.fill(Infinity); return a; });
   const floods=new Array(N);
   for(let i=0;i<N;i++){
@@ -611,15 +585,12 @@ function visitPlan(startCell){
       D[i][j]= f ? f.dist[idx(nodes[j].x, nodes[j].y)] : Infinity;
     }
   }
-  // vecino mas cercano
   const used=new Uint8Array(N); used[0]=1; const tour=[0];
   for(let k=1;k<N;k++){ let bj=-1,bd=Infinity; const c=tour[tour.length-1];
     for(let j=1;j<N;j++) if(!used[j]&&D[c][j]<bd){bd=D[c][j];bj=j;}
-    // Sin distancia finita (otra componente): igual se visita, con salto punteado.
     if(bj<0){ for(let j=1;j<N;j++) if(!used[j]){ bj=j; break; } }
     if(bj<0) break;
     used[bj]=1; tour.push(bj); }
-  // 2-opt
   let improved=true, guard=0;
   const Tn=tour.length;
   while(improved && guard++<40){
@@ -658,7 +629,6 @@ function normalizeVisit(tour, P, backTo){
   return segs;
 }
 
-/* ==================== calculo principal ==================== */
 $('calcBtn').onclick=compute;
 function compute(){
   if(!mask.some(m=>m)){ toast('Primero pinta el área transitable 🖌️'); return; }
@@ -672,11 +642,9 @@ function compute(){
   const ms=Math.round(performance.now()-t0);
   if(!segs||!segs.length){ toast('No hay área que barrer'); return; }
   segs = segs.filter(s=>Math.hypot(s.b.x-s.a.x, s.b.y-s.a.y)>0.01);
-  // longitud y cobertura
   let lenCells=0;
   segs.forEach(s=>lenCells+=Math.hypot(s.b.x-s.a.x,s.b.y-s.a.y));
   const lenPx=lenCells*cs, meters=lenPx/pxPerM;
-  // cobertura: marcar celdas a <= B/2 de la ruta
   const cov=new Uint8Array(GW*GH);
   const rad=B/2+0.3;
   segs.forEach(s=>{ if(s.dash) return;
@@ -699,31 +667,25 @@ function compute(){
   console.log('ruta calculada en', ms, 'ms ·', segs.length, 'segmentos ·', lenShow, '· cobertura', covPct+'%');
 }
 
-/* ==================== render + animacion ==================== */
 function render(){
   ctx.clearRect(0,0,LW,LH);
   ctx.fillStyle='#0b0b14'; ctx.fillRect(0,0,LW,LH);
   if(bgImg){ ctx.globalAlpha=0.92; ctx.drawImage(bgImg,0,0,LW,LH); ctx.globalAlpha=1; }
-  // mascara
   const cs=cellPx();
   ctx.fillStyle='rgba(46,204,113,0.30)';
   for(let y=0;y<GH;y++){ let x0=-1;
     for(let x=0;x<=GW;x++){ const on=x<GW&&mask[idx(x,y)];
       if(on&&x0<0) x0=x;
       if(!on&&x0>=0){ ctx.fillRect(x0*cs, y*cs, (x-x0)*cs, cs+0.5); x0=-1; } } }
-  // rect preview
   if(rectDrag){ ctx.fillStyle='rgba(46,204,113,0.45)';
     ctx.fillRect(Math.min(rectDrag.x0,rectDrag.x1)*cs, Math.min(rectDrag.y0,rectDrag.y1)*cs,
       (Math.abs(rectDrag.x1-rectDrag.x0)+1)*cs, (Math.abs(rectDrag.y1-rectDrag.y0)+1)*cs); }
-  // linea de calibracion
   if(calibLine){ ctx.strokeStyle='#f39c12'; ctx.lineWidth=2; ctx.setLineDash([6,4]);
     ctx.beginPath(); ctx.moveTo(calibLine.x0,calibLine.y0); ctx.lineTo(calibLine.x1,calibLine.y1); ctx.stroke(); ctx.setLineDash([]);
     const L=Math.hypot(calibLine.x1-calibLine.x0, calibLine.y1-calibLine.y0);
     ctx.fillStyle='#f39c12'; ctx.font='bold 14px Segoe UI';
     ctx.fillText((L/pxPerM).toFixed(2)+' m (asumiendo escala)', calibLine.x1+8, calibLine.y1-6); }
-  // ruta
   if(route){ drawRoute(route, anim? anim.dist : Infinity); }
-  // inicio
   if(start){ ctx.fillStyle='#2ecc71'; ctx.strokeStyle='#fff'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.arc(start.x*cs+cs/2, start.y*cs+cs/2, 7, 0, 7); ctx.fill(); ctx.stroke();
     ctx.font='bold 11px Segoe UI'; ctx.fillStyle='#fff';
@@ -759,7 +721,7 @@ function drawRoute(r, dist){
 function startAnim(){
   if(!route) return;
   let total=0; route.segs.forEach(s=>total+=Math.hypot(s.b.x-s.a.x,s.b.y-s.a.y)*cellPx());
-  anim={dist:0,total,t0:performance.now(),speed:total/6}; // ~6 s
+  anim={dist:0,total,t0:performance.now(),speed:total/6};
   const step=(ts)=>{ if(!anim) return;
     anim.dist=(ts-anim.t0)/1000*anim.speed;
     if(anim.dist>=total){ anim=null; render(); return; }
@@ -767,7 +729,6 @@ function startAnim(){
   requestAnimationFrame(step);
 }
 
-/* ==================== API de prueba + arranque ==================== */
 window.SR={
   paintRect:(x0,y0,x1,y1)=>{ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) if(inB(x,y)) mask[idx(x,y)]=1; render(); },
   eraseAll:()=>{ mask.fill(0); render(); },
