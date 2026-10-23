@@ -7,27 +7,29 @@ const MAX_CELLS = 62000;
 
 const metaApi = (typeof module === 'object' && module.exports) ? require('./meta.js') : null;
 
-const STATS = [
-  { key: 'painted_cells' },
-  { key: 'zones' },
-  { key: 'calibrated' },
-  { key: 'px_per_m' },
-  { key: 'broom_cm' },
-  { key: 'has_start' },
-  { key: 'return_to_start' },
-  { key: 'brush_px' },
-  { key: 'has_plan' },
-  { key: 'plans_loaded', monotonic: true },
-  { key: 'routes_total', monotonic: true },
-  { key: 'routes_cover', monotonic: true },
-  { key: 'routes_once', monotonic: true },
-  { key: 'routes_visit', monotonic: true },
-  { key: 'routes_return', monotonic: true },
-  { key: 'best_coverage', monotonic: true },
-  { key: 'longest_m', monotonic: true },
-  { key: 'grid_cells' },
-  { key: 'painted_m2' }
-];
+var TIPO_STAT = (metaApi && metaApi.TIPO_STAT) || globalThis.TIPO_STAT;
+
+const STATS = Object.freeze({
+  painted_cells: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'celdas pintadas en el plano' },
+  zones: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'zonas pintadas separadas' },
+  calibrated: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'escala calibrada: 1 sí, 0 no' },
+  px_per_m: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'píxeles por metro' },
+  broom_cm: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'centímetros de ancho de escoba' },
+  has_start: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'punto de inicio marcado: 1 sí, 0 no' },
+  return_to_start: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'volver al inicio activado: 1 sí, 0 no' },
+  brush_px: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'píxeles de ancho de pincel' },
+  has_plan: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'plano cargado: 1 sí, 0 no' },
+  plans_loaded: { tipo: TIPO_STAT.TOTAL_ACUMULADO, unidad: 'planos cargados' },
+  routes_total: { tipo: TIPO_STAT.TOTAL_ACUMULADO, unidad: 'rutas calculadas' },
+  routes_cover: { tipo: TIPO_STAT.TOTAL_ACUMULADO, unidad: 'rutas en modo cubrir' },
+  routes_once: { tipo: TIPO_STAT.TOTAL_ACUMULADO, unidad: 'rutas en modo una pasada' },
+  routes_visit: { tipo: TIPO_STAT.TOTAL_ACUMULADO, unidad: 'rutas en modo visitar' },
+  routes_return: { tipo: TIPO_STAT.TOTAL_ACUMULADO, unidad: 'rutas con regreso al inicio' },
+  best_coverage: { tipo: TIPO_STAT.MEJOR_MARCA, unidad: 'porcentaje del área cubierta por una ruta' },
+  longest_m: { tipo: TIPO_STAT.MEJOR_MARCA, unidad: 'metros de la ruta más larga' },
+  grid_cells: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'celdas de la cuadrícula' },
+  painted_m2: { tipo: TIPO_STAT.VALOR_ACTUAL, unidad: 'metros cuadrados pintados' }
+});
 
 function metaDeclareNow(list) {
   try {

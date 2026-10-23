@@ -1,9 +1,13 @@
 'use strict';
 
+var FASE = Object.freeze({ IDEA: 1, DEFINICION: 2, DISENO: 3, CONSTRUCCION: 4, VALIDACION: 5, LANZAMIENTO_Y_MANTENIMIENTO: 6, DESCARTADA: 7 });
+var ESTADO_FASE = Object.freeze({ PENDIENTE: 0, EN_CURSO: 1, BLOQUEADA: 2, EN_REVISION: 3, COMPLETADA: 4 });
+var TIPO_STAT = Object.freeze({ TOTAL_ACUMULADO: 'total_acumulado', MEJOR_MARCA: 'mejor_marca', VALOR_ACTUAL: 'valor_actual' });
+
 var PROYECTO = {
   objetivo: 'En algún momento pensé que era una buena idea, pero tal vez te sirva de inspiración.',
-  fase: 7,
-  fase_estado: 4,
+  fase: FASE.DESCARTADA,
+  fase_estado: ESTADO_FASE.COMPLETADA,
   fases_completadas: 2
 };
 
@@ -13,12 +17,26 @@ function proyectoInt(n, lo, hi) {
   return typeof n === 'number' && Number.isInteger(n) && n >= lo && n <= hi;
 }
 
+function enumValido(enumeracion, valor) {
+  return Object.values(enumeracion).indexOf(valor) !== -1;
+}
+
+function statConservaMaximo(tipo) {
+  return tipo === TIPO_STAT.TOTAL_ACUMULADO || tipo === TIPO_STAT.MEJOR_MARCA;
+}
+
+function statsDeclarados(stats) {
+  if (Array.isArray(stats)) return stats;
+  if (!stats || typeof stats !== 'object') return [];
+  return Object.keys(stats).map(function (key) { return { key: key, tipo: stats[key] && stats[key].tipo }; });
+}
+
 function metaProyecto(p) {
   try {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
     var o = p.objetivo;
     if (typeof o !== 'string' || !o.trim() || Array.from(o).length > 140) return null;
-    if (!proyectoInt(p.fase, 1, 7) || !proyectoInt(p.fase_estado, 0, 4) || !proyectoInt(p.fases_completadas, 0, 6)) return null;
+    if (!enumValido(FASE, p.fase) || !enumValido(ESTADO_FASE, p.fase_estado) || !proyectoInt(p.fases_completadas, 0, FASE.LANZAMIENTO_Y_MANTENIMIENTO)) return null;
     return { objetivo: o, fase: p.fase, fase_estado: p.fase_estado, fases_completadas: p.fases_completadas };
   } catch (e) {
     return null;
@@ -39,7 +57,7 @@ var declaredStats = [];
 
 function metaDeclare(list) {
   try {
-    var src = Array.isArray(list) ? list : [];
+    var src = statsDeclarados(list);
     var out = [];
     for (var i = 0; i < src.length && out.length < 20; i++) {
       var item = src[i];
@@ -48,7 +66,7 @@ function metaDeclare(list) {
       var seen = false;
       for (var j = 0; j < out.length; j++) if (out[j].key === key) seen = true;
       if (seen) continue;
-      out.push({ key: key, monotonic: !!(item && typeof item === 'object' && item.monotonic) });
+      out.push({ key: key, tipo: item && typeof item === 'object' ? item.tipo : undefined });
     }
     declaredStats = out;
   } catch (e) {}
@@ -127,7 +145,7 @@ function metaUpdate(slug, version, patch) {
       var hasNew = Object.prototype.hasOwnProperty.call(incoming, spec.key);
       var hasOld = Object.prototype.hasOwnProperty.call(previous, spec.key);
       if (hasNew) {
-        stats[spec.key] = (spec.monotonic && hasOld) ? Math.max(previous[spec.key], incoming[spec.key]) : incoming[spec.key];
+        stats[spec.key] = (statConservaMaximo(spec.tipo) && hasOld) ? Math.max(previous[spec.key], incoming[spec.key]) : incoming[spec.key];
       } else if (hasOld) {
         stats[spec.key] = previous[spec.key];
       }
@@ -183,7 +201,13 @@ if (typeof module === 'object' && module.exports) {
     metaDemo: metaDemo,
     metaProyecto: metaProyecto,
     metaSetProyecto: metaSetProyecto,
-    PROYECTO: PROYECTO
+    PROYECTO: PROYECTO,
+    FASE: FASE,
+    ESTADO_FASE: ESTADO_FASE,
+    TIPO_STAT: TIPO_STAT,
+    enumValido: enumValido,
+    statConservaMaximo: statConservaMaximo,
+    statsDeclarados: statsDeclarados
   };
 }
 globalThis.metaUpdate = metaUpdate;
