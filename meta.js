@@ -3,6 +3,7 @@
 var FASE = Object.freeze({ IDEA: 1, DEFINICION: 2, DISENO: 3, CONSTRUCCION: 4, VALIDACION: 5, LANZAMIENTO_Y_MANTENIMIENTO: 6, DESCARTADA: 7 });
 var ESTADO_FASE = Object.freeze({ PENDIENTE: 0, EN_CURSO: 1, BLOQUEADA: 2, EN_REVISION: 3, COMPLETADA: 4 });
 var TIPO_STAT = Object.freeze({ TOTAL_ACUMULADO: 'total_acumulado', MEJOR_MARCA: 'mejor_marca', VALOR_ACTUAL: 'valor_actual' });
+var TIPO_PROYECTO = Object.freeze({ PROYECTO: 'proyecto', AREA: 'area', RECURSO: 'recurso', ARCHIVO: 'archivo' });
 
 var PROYECTO = {
   objetivo: 'En algún momento pensé que era una buena idea, pero tal vez te sirva de inspiración.',
@@ -37,7 +38,10 @@ function metaProyecto(p) {
     var o = p.objetivo;
     if (typeof o !== 'string' || !o.trim() || Array.from(o).length > 140) return null;
     if (!enumValido(FASE, p.fase) || !enumValido(ESTADO_FASE, p.fase_estado) || !proyectoInt(p.fases_completadas, 0, FASE.LANZAMIENTO_Y_MANTENIMIENTO)) return null;
-    return { objetivo: o, fase: p.fase, fase_estado: p.fase_estado, fases_completadas: p.fases_completadas };
+    if (p.tipo !== undefined && !enumValido(TIPO_PROYECTO, p.tipo)) return null;
+    var bloque = { objetivo: o, fase: p.fase, fase_estado: p.fase_estado, fases_completadas: p.fases_completadas };
+    if (p.tipo !== undefined) bloque.tipo = p.tipo;
+    return bloque;
   } catch (e) {
     return null;
   }
@@ -205,6 +209,7 @@ if (typeof module === 'object' && module.exports) {
     FASE: FASE,
     ESTADO_FASE: ESTADO_FASE,
     TIPO_STAT: TIPO_STAT,
+    TIPO_PROYECTO: TIPO_PROYECTO,
     enumValido: enumValido,
     statConservaMaximo: statConservaMaximo,
     statsDeclarados: statsDeclarados
