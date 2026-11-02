@@ -21,7 +21,7 @@
 - Solo las zonas sin camino interior se unen con un salto punteado.
 
 ## Stack
-Un solo `index.html` con HTML, Canvas y JavaScript vanilla. Sin dependencias ni servidor.
+`index.html` con HTML, Canvas y JavaScript vanilla, más `meta.js` y `progress.js` para el progreso guardado en el navegador. Sin dependencias ni servidor. Tests con `node --test`.
 
 ---
 
