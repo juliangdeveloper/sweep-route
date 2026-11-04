@@ -22,6 +22,7 @@
 
 ## Stack
 `index.html` con HTML, Canvas y JavaScript vanilla, más `meta.js` y `progress.js` para el progreso guardado en el navegador. Sin dependencias ni servidor. Tests con `node --test`.
+Al abrirse guarda el progreso en `localStorage` (`meta.v1.sweep-route`), que lee el [portafolio](https://juliangdeveloper.github.io/).
 
 ---
 

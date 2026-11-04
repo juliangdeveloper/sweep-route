@@ -323,29 +323,6 @@ test('metaUpdate keeps hitos, unions logros, and posts to the parent', () => {
   assert.equal(JSON.parse(localStorage.getItem(KEY)).stats.routes_total, 2);
 });
 
-test('demo and preview modes do not write or postMessage', () => {
-  const messages = [];
-  global.window = {
-    parent: { postMessage() { messages.push(1); } }
-  };
-  global.location = { search: '?demo=1', origin: 'https://example.test' };
-  const raw = JSON.stringify(oldSave());
-  localStorage.setItem(SAVE, raw);
-  backfillMeta(VERSION);
-  metaUpdate('sweep-route', VERSION, { stats: { routes_total: 9 }, logros: ['first_route'] });
-  const schedule = createMetaPump(VERSION, () => ({ gw: 4, gh: 4, mask: '16,1', counters: { routesTotal: 3 } }));
-  schedule();
-  flushMeta();
-  assert.equal(localStorage.getItem(KEY), null);
-  assert.equal(localStorage.getItem(KEY + '.corrupt'), null);
-  assert.equal(messages.length, 0);
-  assert.equal(localStorage.getItem(SAVE), raw);
-
-  global.location = { search: '?preview=1', origin: 'https://example.test' };
-  backfillMeta(VERSION);
-  assert.equal(localStorage.getItem(KEY), null);
-});
-
 test('old save is unchanged after load and routes, with at most one meta write per second', (t) => {
   global.Date = realDate;
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });

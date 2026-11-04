@@ -47,15 +47,6 @@ function metaWrite(slug, version, patch) {
   return null;
 }
 
-function metaIsDemo() {
-  try {
-    const fn = (metaApi && metaApi.metaDemo) || globalThis.metaDemo;
-    return typeof fn === 'function' && !!fn();
-  } catch (e) {
-    return false;
-  }
-}
-
 function num(v, fallback) {
   const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
   return Number.isFinite(n) ? n : fallback;
@@ -289,7 +280,6 @@ function noteMetaWrite() {
 
 function backfillMeta(version, fallbackSave) {
   try {
-    if (metaIsDemo()) return;
     const store = projectStore();
     if (!store) return;
     const key = 'meta.v1.' + META_SLUG;
@@ -316,10 +306,6 @@ function backfillMeta(version, fallbackSave) {
 function performMetaWrite() {
   metaTimer = null;
   try {
-    if (metaIsDemo()) {
-      metaPending = false;
-      return;
-    }
     const save = typeof metaRead === 'function' ? metaRead() : {};
     const stats = deriveStats(save || {});
     if (metaWrite(META_SLUG, metaVersion, { stats: stats, logros: logrosFromStats(stats) })) metaPending = false;
@@ -331,7 +317,7 @@ function performMetaWrite() {
 
 function flushMeta() {
   try {
-    if (!metaPending || metaIsDemo()) return;
+    if (!metaPending) return;
     if (metaTimer !== null) {
       clearTimeout(metaTimer);
       metaTimer = null;
@@ -366,7 +352,6 @@ function createMetaPump(version, readSave) {
   bindHide();
   return function scheduleMeta() {
     try {
-      if (metaIsDemo()) return;
       metaPending = true;
       if (metaTimer !== null) return;
       const wait = metaHasWritten ? Math.max(0, 1000 - (Date.now() - metaWroteAt)) : 0;
