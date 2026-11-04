@@ -12,14 +12,9 @@ var PROYECTO = {
   fases_completadas: 2,
   tipo: TIPO_PROYECTO.RECURSO,
   aportes: [
-    { id: 'programacion', aporte: 2, fuente: 'creacion' },
-    { id: 'algoritmos', aporte: 3, fuente: 'creacion' },
-    { id: 'matematicas', aporte: 2, fuente: 'creacion' },
-    { id: 'geometria', aporte: 2, fuente: 'creacion' },
-    { id: 'graficos', aporte: 1, fuente: 'creacion' },
-    { id: 'organizacion', aporte: 2, fuente: 'uso' },
-    { id: 'logica', aporte: 2, fuente: 'uso' },
-    { id: 'disciplina', aporte: 1, fuente: 'uso' }
+    { stat: 'Programación', exp: 6, fuente: 'creacion' },
+    { stat: 'Diseño', exp: 7, fuente: 'creacion' },
+    { stat: 'Planificación', exp: 10, fuente: 'uso' }
   ]
 };
 
@@ -43,25 +38,27 @@ function statsDeclarados(stats) {
   return Object.keys(stats).map(function (key) { return { key: key, tipo: stats[key] && stats[key].tipo }; });
 }
 
+var APORTE_STAT_MAX = 32;
+var APORTE_EXP_MAX = 99;
+
 function aportesValidos(lista) {
   if (!Array.isArray(lista)) return null;
   var out = [];
   var seen = {};
-  var i;
-  for (i = 0; i < lista.length; i++) {
+  for (var i = 0; i < lista.length; i++) {
     var it = lista[i];
     if (!it || typeof it !== 'object' || Array.isArray(it)) return null;
-    var id = it.id;
+    var stat = it.stat;
+    var exp = it.exp;
     var fuente = it.fuente;
-    var aporte = it.aporte;
-    if (typeof id !== 'string' || !/^[a-z][a-z0-9]*$/.test(id)) return null;
+    if (typeof stat !== 'string' || !stat.trim() || stat !== stat.trim() || Array.from(stat).length > APORTE_STAT_MAX) return null;
     if (fuente !== 'creacion' && fuente !== 'uso') return null;
-    if (!proyectoInt(aporte, 1, 3)) return null;
-    var key = id + '\n' + fuente;
+    if (!(proyectoInt(exp, 1, APORTE_EXP_MAX))) return null;
+    var key = stat + '\n' + fuente;
     if (seen[key]) return null;
     if (Object.keys(it).length !== 3) return null;
     seen[key] = true;
-    out.push({ id: id, aporte: aporte, fuente: fuente });
+    out.push({ stat: stat, exp: exp, fuente: fuente });
   }
   return out;
 }
@@ -89,6 +86,36 @@ function metaProyecto(p) {
 
 function metaSetProyecto(p) {
   proyectoSource = p === null ? PROYECTO : p;
+}
+
+function metaDeclararProyecto(slug, version) {
+  try {
+    var store = globalThis.localStorage;
+    if (!store || !slug) return null;
+    var clave = 'meta.v1.' + slug;
+    var raw = store.getItem(clave);
+    var base = null;
+    if (raw != null && raw !== '') {
+      try {
+        var previo = JSON.parse(raw);
+        if (previo && typeof previo === 'object' && !Array.isArray(previo) && previo.v === 1 && previo.slug === slug) base = previo;
+      } catch (e) {
+        base = null;
+      }
+      if (!base) store.setItem(clave + '.corrupt', String(raw));
+    }
+    if (!base) base = { v: 1, slug: slug, version: String(version == null ? '' : version).replace(/^[vV]/, ''), updatedAt: new Date().toISOString(), stats: {}, logros: [], hitos: {} };
+    var p = metaProyecto(proyectoSource);
+    if (p) base.proyecto = p;
+    var texto = JSON.stringify(base);
+    if (texto !== raw) {
+      store.setItem(clave, texto);
+      if (typeof window !== 'undefined' && window.parent && window.parent !== window) window.parent.postMessage({ type: 'meta', key: clave, data: base }, location.origin);
+    }
+    return base;
+  } catch (e) {
+    return null;
+  }
 }
 
 function withProyecto(record) {
@@ -122,20 +149,6 @@ function plainVersion(version) {
   return s;
 }
 
-function metaDemo() {
-  try {
-    var loc = globalThis.location;
-    var search = loc && typeof loc.search === 'string' ? loc.search : '';
-    if (!search) return false;
-    var q = new URLSearchParams(search);
-    var demo = q.get('demo');
-    var preview = q.get('preview');
-    return demo === '1' || demo === 'true' || preview === '1' || preview === 'true';
-  } catch (e) {
-    return false;
-  }
-}
-
 function metaStore() {
   try {
     var store = globalThis.localStorage;
@@ -161,7 +174,6 @@ function recordValid(parsed, slug) {
 
 function metaUpdate(slug, version, patch) {
   try {
-    if (metaDemo()) return null;
     var store = metaStore();
     if (!store) return null;
     var key = 'meta.v1.' + slug;
@@ -242,9 +254,9 @@ if (typeof module === 'object' && module.exports) {
   module.exports = {
     metaUpdate: metaUpdate,
     metaDeclare: metaDeclare,
-    metaDemo: metaDemo,
     metaProyecto: metaProyecto,
     metaSetProyecto: metaSetProyecto,
+    metaDeclararProyecto: metaDeclararProyecto,
     PROYECTO: PROYECTO,
     FASE: FASE,
     ESTADO_FASE: ESTADO_FASE,
@@ -257,4 +269,4 @@ if (typeof module === 'object' && module.exports) {
 }
 globalThis.metaUpdate = metaUpdate;
 globalThis.metaDeclare = metaDeclare;
-globalThis.metaDemo = metaDemo;
+globalThis.metaDeclararProyecto = metaDeclararProyecto;
